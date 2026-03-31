@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">X695C Vendor Optimizer</string>
+    <string name="game_optimization">Game Optimization</string>
+    <string name="performance_scenarios">Performance Scenarios</string>
+    <string name="memory_management">Memory Management</string>
+    <string name="cpu_scheduling">CPU Scheduling</string>
+    <string name="gpu_settings">GPU Settings</string>
+    <string name="network_optimization">Network Optimization</string>
+    <string name="apply_changes">Apply Changes</string>
+    <string name="export_config">Export Config</string>
+    <string name="reset_defaults">Reset to Defaults</string>
+</resources>

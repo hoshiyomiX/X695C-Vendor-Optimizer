@@ -69,7 +69,7 @@ fun MainDashboardScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "INFINIX Hot 11S | Helio G95",
+                            text = "Infinix Note 10 Pro NFC | Helio G95",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )

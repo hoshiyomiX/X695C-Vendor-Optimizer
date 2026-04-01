@@ -2,7 +2,14 @@ package com.x695c.optimizer.data
 
 /**
  * Data models for X695C Vendor Optimization Configuration
- * Based on analysis of INFINIX X695C vendor partition files
+ * Device: Infinix Note 10 Pro NFC
+ * SoC: MediaTek Helio G95 (MT6785)
+ * 
+ * Helio G95 Specifications:
+ * - CPU: 2x Cortex-A76 @ 2.05 GHz + 6x Cortex-A55 @ 2.0 GHz
+ * - GPU: Mali-G76 MC4 @ 720 MHz (up to 900 MHz boost)
+ * - Memory: LPDDR4X up to 2133 MHz
+ * - Process: 12nm FinFET
  */
 
 // ==================== ENUMS FOR DROPDOWN OPTIONS ====================
@@ -75,9 +82,9 @@ enum class NetworkBoost(val value: Int, val description: String) {
 }
 
 enum class DramOpp(val value: Int, val description: String) {
-    HIGH_PERFORMANCE(0, "High Performance (Max Frequency)"),
-    BALANCED(1, "Balanced"),
-    POWER_SAVING(2, "Power Saving (Low Frequency)");
+    HIGH_PERFORMANCE(0, "High Performance (2133 MHz)"),
+    BALANCED(1, "Balanced (1600 MHz)"),
+    POWER_SAVING(2, "Power Saving (1066 MHz)");
 
     companion object {
         fun fromValue(value: Int) = entries.find { it.value == value } ?: BALANCED
@@ -174,8 +181,8 @@ data class GameOptimizationConfig(
 
 data class PerformanceScenarioConfig(
     val scenarioName: String,
-    val cpuFreqMinCluster0: Long = 0,
-    val cpuFreqMinCluster1: Long = 0,
+    val cpuFreqMinCluster0: Long = 0,  // Little cores (A55) - Max 2.0 GHz
+    val cpuFreqMinCluster1: Long = 0,  // Big cores (A76) - Max 2.05 GHz
     val dramOpp: DramOpp = DramOpp.BALANCED,
     val uclampMin: UclampMin = UclampMin.NONE,
     val schedBoost: SchedBoost = SchedBoost.DISABLED,
@@ -269,90 +276,173 @@ data class FullOptimizationConfig(
 
 // ==================== HELPER FUNCTIONS ====================
 
+/**
+ * Default game configurations optimized for Helio G95
+ * GPU: Mali-G76 MC4 @ 720-900 MHz
+ * CPU: 2x A76 @ 2.05 GHz + 6x A55 @ 2.0 GHz
+ */
 fun getDefaultGameConfigs(): Map<String, GameOptimizationConfig> {
     return mapOf(
+        // Honor of Kings - High intensity MOBA
         "com.tencent.tmgp.sgame" to GameOptimizationConfig(
             packageName = "com.tencent.tmgp.sgame",
             thermalPolicy = ThermalPolicy.PERFORMANCE,
-            gpuMarginMode = GpuMarginMode.MAXIMUM,
+            gpuMarginMode = GpuMarginMode.HIGH,
             gpuTimerDvfsMargin = 10,
+            uclampMin = UclampMin.HIGH,
             networkBoost = NetworkBoost.STANDARD,
             wifiLowLatency = WifiLowLatency.ENABLED,
             weakSignalOpt = WeakSignalOpt.ENABLED,
             coldLaunchTime = 25000
         ),
+        // PUBG Mobile - Battle Royale
         "com.tencent.ig" to GameOptimizationConfig(
             packageName = "com.tencent.ig",
             thermalPolicy = ThermalPolicy.PERFORMANCE,
-            gpuMarginMode = GpuMarginMode.MAXIMUM,
+            gpuMarginMode = GpuMarginMode.HIGH,
+            uclampMin = UclampMin.HIGH,
             networkBoost = NetworkBoost.STANDARD,
             weakSignalOpt = WeakSignalOpt.ENABLED
         ),
+        // Free Fire - Less demanding, optimize for smoothness
         "com.dts.freefireth" to GameOptimizationConfig(
             packageName = "com.dts.freefireth",
-            thermalPolicy = ThermalPolicy.PERFORMANCE,
-            gpuMarginMode = GpuMarginMode.MAXIMUM
+            thermalPolicy = ThermalPolicy.BALANCED,
+            gpuMarginMode = GpuMarginMode.BALANCED,
+            uclampMin = UclampMin.MEDIUM
         ),
+        // PUBG Mobile HD - More GPU intensive
         "com.tencent.tmgp.pubgmhd" to GameOptimizationConfig(
-            packageName = "com.tencent.tmgp.pubgmhd",
+            packageName = "com.tencent.tmgp.pubmh",
             thermalPolicy = ThermalPolicy.PERFORMANCE,
             gpuMarginMode = GpuMarginMode.MAXIMUM,
+            uclampMin = UclampMin.VERY_HIGH,
             networkBoost = NetworkBoost.STANDARD,
             weakSignalOpt = WeakSignalOpt.ENABLED,
             wifiLowLatency = WifiLowLatency.ENABLED
         ),
+        // Genshin Impact - Very demanding
         "com.miHoYo.enterprise.NGHSoD" to GameOptimizationConfig(
             packageName = "com.miHoYo.enterprise.NGHSoD",
+            thermalPolicy = ThermalPolicy.AGGRESSIVE,
+            gpuMarginMode = GpuMarginMode.MAXIMUM,
+            uclampMin = UclampMin.MAXIMUM,
             fpsAdjustLoading = true,
-            fpsLoadingThreshold = FpsLoadingThreshold.STANDARD,
+            fpsLoadingThreshold = FpsLoadingThreshold.HIGH,
+            frameRescuePercent = FrameRescuePercent.HIGH,
             networkBoost = NetworkBoost.STANDARD,
             weakSignalOpt = WeakSignalOpt.ENABLED
+        ),
+        // Mobile Legends
+        "com.mobile.legends" to GameOptimizationConfig(
+            packageName = "com.mobile.legends",
+            thermalPolicy = ThermalPolicy.BALANCED,
+            gpuMarginMode = GpuMarginMode.BALANCED,
+            uclampMin = UclampMin.MEDIUM,
+            networkBoost = NetworkBoost.STANDARD
+        ),
+        // Call of Duty Mobile
+        "com.activision.callofduty.shooter" to GameOptimizationConfig(
+            packageName = "com.activision.callofduty.shooter",
+            thermalPolicy = ThermalPolicy.PERFORMANCE,
+            gpuMarginMode = GpuMarginMode.HIGH,
+            uclampMin = UclampMin.HIGH,
+            networkBoost = NetworkBoost.STANDARD,
+            wifiLowLatency = WifiLowLatency.ENABLED
         )
     )
 }
 
+/**
+ * Default scenario configurations optimized for Helio G95
+ * 
+ * CPU Frequency Limits (in kHz):
+ * - Cluster 0 (Little - Cortex-A55): Max 2000000 (2.0 GHz)
+ * - Cluster 1 (Big - Cortex-A76): Max 2050000 (2.05 GHz)
+ */
 fun getDefaultScenarioConfigs(): Map<String, PerformanceScenarioConfig> {
     return mapOf(
+        // App Launch - Maximum boost for fast startup
         "LAUNCH" to PerformanceScenarioConfig(
             scenarioName = "LAUNCH",
-            cpuFreqMinCluster0 = 3000000,
-            cpuFreqMinCluster1 = 3000000,
+            cpuFreqMinCluster0 = 2000000,  // 2.0 GHz (A55 max)
+            cpuFreqMinCluster1 = 2050000,  // 2.05 GHz (A76 max)
             dramOpp = DramOpp.HIGH_PERFORMANCE,
             uclampMin = UclampMin.MAXIMUM
         ),
+        // Touch Response - Quick boost for responsiveness
         "MTKPOWER_HINT_APP_TOUCH" to PerformanceScenarioConfig(
             scenarioName = "MTKPOWER_HINT_APP_TOUCH",
-            cpuFreqMinCluster0 = 1500000,
-            cpuFreqMinCluster1 = 1419000
+            cpuFreqMinCluster0 = 1200000,  // 1.2 GHz
+            cpuFreqMinCluster1 = 1500000,  // 1.5 GHz
+            touchBoostOpp = TouchBoostOpp.HIGH,
+            touchBoostDuration = 100000000
         ),
+        // Process Creation - Boost for new app spawns
         "MTKPOWER_HINT_PROCESS_CREATE" to PerformanceScenarioConfig(
             scenarioName = "MTKPOWER_HINT_PROCESS_CREATE",
-            cpuFreqMinCluster0 = 3000000,
-            cpuFreqMinCluster1 = 3000000,
+            cpuFreqMinCluster0 = 2000000,  // 2.0 GHz
+            cpuFreqMinCluster1 = 2050000,  // 2.05 GHz
             dramOpp = DramOpp.HIGH_PERFORMANCE,
-            uclampMin = UclampMin.MAXIMUM,
+            uclampMin = UclampMin.VERY_HIGH,
             bhrOpp = 15,
             holdTime = 6000,
             extHint = 30,
             extHintHoldTime = 35000
         ),
+        // Screen Rotation - Smooth animation
         "MTKPOWER_HINT_APP_ROTATE" to PerformanceScenarioConfig(
             scenarioName = "MTKPOWER_HINT_APP_ROTATE",
-            cpuFreqMinCluster0 = 3000000,
-            cpuFreqMinCluster1 = 3000000,
+            cpuFreqMinCluster0 = 1600000,  // 1.6 GHz
+            cpuFreqMinCluster1 = 1800000,  // 1.8 GHz
             dramOpp = DramOpp.HIGH_PERFORMANCE,
-            uclampMin = UclampMin.MAXIMUM,
+            uclampMin = UclampMin.HIGH,
             schedBoost = SchedBoost.ENABLED
         ),
+        // Fingerprint - Quick authentication
         "MTKPOWER_HINT_FLINGER_PRINT" to PerformanceScenarioConfig(
             scenarioName = "MTKPOWER_HINT_FLINGER_PRINT",
-            cpuFreqMinCluster0 = 3000000,
-            cpuFreqMinCluster1 = 3000000,
+            cpuFreqMinCluster0 = 1500000,  // 1.5 GHz
+            cpuFreqMinCluster1 = 1800000,  // 1.8 GHz
             dramOpp = DramOpp.HIGH_PERFORMANCE
         ),
+        // UI Interaction - Smooth scrolling
         "INTERACTION" to PerformanceScenarioConfig(
             scenarioName = "INTERACTION",
-            bhrOpp = 15
+            cpuFreqMinCluster0 = 1000000,  // 1.0 GHz
+            cpuFreqMinCluster1 = 1200000,  // 1.2 GHz
+            bhrOpp = 15,
+            touchBoostOpp = TouchBoostOpp.STANDARD
+        ),
+        // Package Switch - Fast app switching
+        "MTKPOWER_HINT_PACK_SWITCH" to PerformanceScenarioConfig(
+            scenarioName = "MTKPOWER_HINT_PACK_SWITCH",
+            cpuFreqMinCluster0 = 1400000,  // 1.4 GHz
+            cpuFreqMinCluster1 = 1600000,  // 1.6 GHz
+            dramOpp = DramOpp.BALANCED,
+            uclampMin = UclampMin.MEDIUM
+        ),
+        // Activity Switch
+        "MTKPOWER_HINT_ACT_SWITCH" to PerformanceScenarioConfig(
+            scenarioName = "MTKPOWER_HINT_ACT_SWITCH",
+            cpuFreqMinCluster0 = 1200000,  // 1.2 GHz
+            cpuFreqMinCluster1 = 1500000,  // 1.5 GHz
+            uclampMin = UclampMin.MEDIUM
+        ),
+        // Gallery Boost - Fast image loading
+        "MTKPOWER_HINT_GALLERY_BOOST" to PerformanceScenarioConfig(
+            scenarioName = "MTKPOWER_HINT_GALLERY_BOOST",
+            cpuFreqMinCluster0 = 1200000,  // 1.2 GHz
+            cpuFreqMinCluster1 = 1500000,  // 1.5 GHz
+            dramOpp = DramOpp.HIGH_PERFORMANCE
+        ),
+        // WiFi Display
+        "MTKPOWER_HINT_WFD" to PerformanceScenarioConfig(
+            scenarioName = "MTKPOWER_HINT_WFD",
+            cpuFreqMinCluster0 = 1600000,  // 1.6 GHz
+            cpuFreqMinCluster1 = 1800000,  // 1.8 GHz
+            dramOpp = DramOpp.HIGH_PERFORMANCE,
+            uclampMin = UclampMin.HIGH
         )
     )
 }

@@ -34,7 +34,7 @@ fun GpuSettingsScreen(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Mali-G76 MC4 GPU",
+                        text = "Mali-G76 MC4 @ 720-900 MHz",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }

@@ -65,34 +65,36 @@ fun PerformanceScenarioScreen(
             )
 
             LongDropdownSelector(
-                label = "CPU Freq Min Cluster 0 (Little Cores)",
+                label = "CPU Freq Min Cluster 0 (Little Cores - A55)",
                 value = config.cpuFreqMinCluster0,
                 options = listOf(
                     0L to "Default (No Override)",
+                    600000L to "600 MHz",
                     800000L to "800 MHz",
                     1000000L to "1.0 GHz",
                     1200000L to "1.2 GHz",
-                    1500000L to "1.5 GHz",
+                    1400000L to "1.4 GHz",
+                    1600000L to "1.6 GHz",
                     1800000L to "1.8 GHz",
-                    2000000L to "2.0 GHz",
-                    3000000L to "Maximum"
+                    2000000L to "2.0 GHz (Max)"
                 ),
                 onValueChange = { onConfigChange(config.copy(cpuFreqMinCluster0 = it)) }
             )
 
             LongDropdownSelector(
-                label = "CPU Freq Min Cluster 1 (Big Cores)",
+                label = "CPU Freq Min Cluster 1 (Big Cores - A76)",
                 value = config.cpuFreqMinCluster1,
                 options = listOf(
                     0L to "Default (No Override)",
+                    600000L to "600 MHz",
                     800000L to "800 MHz",
                     1000000L to "1.0 GHz",
                     1200000L to "1.2 GHz",
-                    1419000L to "1.4 GHz",
+                    1400000L to "1.4 GHz",
                     1600000L to "1.6 GHz",
                     1800000L to "1.8 GHz",
                     2000000L to "2.0 GHz",
-                    3000000L to "Maximum"
+                    2050000L to "2.05 GHz (Max)"
                 ),
                 onValueChange = { onConfigChange(config.copy(cpuFreqMinCluster1 = it)) }
             )

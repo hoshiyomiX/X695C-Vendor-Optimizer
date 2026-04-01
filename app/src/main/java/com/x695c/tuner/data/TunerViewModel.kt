@@ -32,12 +32,142 @@ class TunerViewModel : ViewModel() {
     private val _configAvailability = MutableStateFlow<Map<ConfigFileDetector.ConfigType, ConfigFileDetector.ConfigStatus>>(emptyMap())
     val configAvailability: StateFlow<Map<ConfigFileDetector.ConfigType, ConfigFileDetector.ConfigStatus>> = _configAvailability.asStateFlow()
 
+    // Root access state
+    private val _rootState = MutableStateFlow(RootState())
+    val rootState: StateFlow<RootState> = _rootState.asStateFlow()
+
+    // Config change tracking state
+    private val _configChangeStatus = MutableStateFlow<Map<ConfigFileDetector.ConfigType, ConfigChangeTracker.ChangeStatus>>(emptyMap())
+    val configChangeStatus: StateFlow<Map<ConfigFileDetector.ConfigType, ConfigChangeTracker.ChangeStatus>> = _configChangeStatus.asStateFlow()
+
     init {
         // Log app start
         ActivityLogger.log("App", "INIT", "X695C Vendor Tuner started")
 
+        // Check root availability (non-blocking)
+        checkRootAvailability()
+
         // Detect and parse config files
         detectAndLoadConfigs()
+    }
+
+    // ==================== ROOT ACCESS METHODS ====================
+
+    /**
+     * Check if root is available on the device.
+     */
+    private fun checkRootAvailability() {
+        viewModelScope.launch {
+            val isAvailable = RootChecker.isRootAvailable()
+            _rootState.value = RootState(
+                isAvailable = isAvailable,
+                hasBeenRequested = false,
+                isGranted = isAvailable
+            )
+
+            if (isAvailable) {
+                ActivityLogger.log("Root", "DETECTED", "Root access detected on device")
+            } else {
+                ActivityLogger.log("Root", "NOT_DETECTED", "No root access detected")
+            }
+        }
+    }
+
+    /**
+     * Request root access from the user.
+     * This will show a popup on rooted devices.
+     */
+    fun requestRootAccess() {
+        viewModelScope.launch {
+            _rootState.value = _rootState.value.copy(isRequesting = true)
+
+            val granted = RootChecker.requestRootAccess()
+
+            _rootState.value = RootState(
+                isAvailable = granted,
+                hasBeenRequested = true,
+                isGranted = granted,
+                isRequesting = false
+            )
+
+            if (granted) {
+                ActivityLogger.log("Root", "GRANTED", "Root access granted by user")
+                // Initialize config change baseline after getting root
+                initializeConfigChangeBaseline()
+            } else {
+                ActivityLogger.log("Root", "DENIED", "Root access denied by user or not available")
+            }
+        }
+    }
+
+    /**
+     * Dismiss the root request dialog without granting.
+     */
+    fun dismissRootRequest() {
+        _rootState.value = _rootState.value.copy(
+            hasBeenRequested = true,
+            isRequesting = false
+        )
+        ActivityLogger.log("Root", "DISMISSED", "Root request dialog dismissed")
+    }
+
+    /**
+     * Check if root should be requested.
+     */
+    fun shouldRequestRoot(): Boolean {
+        val state = _rootState.value
+        return !state.isAvailable && !state.hasBeenRequested && !state.isRequesting
+    }
+
+    // ==================== CONFIG CHANGE TRACKING METHODS ====================
+
+    /**
+     * Initialize config change detection baseline.
+     */
+    private fun initializeConfigChangeBaseline() {
+        viewModelScope.launch {
+            ConfigChangeTracker.initializeBaseline()
+            checkConfigChanges()
+        }
+    }
+
+    /**
+     * Check all config files for external changes.
+     */
+    fun checkConfigChanges() {
+        viewModelScope.launch {
+            val changes = ConfigChangeTracker.checkAllForChanges()
+            val statuses = ConfigChangeTracker.getAllChangeStatuses()
+            _configChangeStatus.value = statuses
+
+            // Log any detected changes
+            changes.values.filter { it.isExternal }.forEach { result ->
+                ActivityLogger.log("ConfigChange", "EXTERNAL_MODIFICATION", "${result.obfuscatedPath} was modified externally")
+            }
+        }
+    }
+
+    /**
+     * Get formatted logs for copying.
+     */
+    fun getFormattedLogs(): String {
+        return ActivityLogger.getFormattedLogs()
+    }
+
+    /**
+     * Check if any config has external changes.
+     */
+    fun hasExternalConfigChanges(): Boolean {
+        return ConfigChangeTracker.hasAnyExternalChanges()
+    }
+
+    /**
+     * Save current config states as known baseline.
+     * Call this after applying config changes from the APK.
+     */
+    fun saveCurrentConfigStatesAsKnown() {
+        ConfigChangeTracker.saveAllCurrentStatesAsKnown()
+        checkConfigChanges()
     }
 
     private fun detectAndLoadConfigs() {
@@ -324,4 +454,14 @@ class TunerViewModel : ViewModel() {
 data class TunerUiState(
     val isLoading: Boolean = false,
     val message: String? = null
+)
+
+/**
+ * State for root access management
+ */
+data class RootState(
+    val isAvailable: Boolean = false,       // Root is available on device
+    val hasBeenRequested: Boolean = false,  // User has seen the request dialog
+    val isGranted: Boolean = false,         // Root has been granted
+    val isRequesting: Boolean = false       // Currently requesting root
 )

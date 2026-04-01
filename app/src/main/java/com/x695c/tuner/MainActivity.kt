@@ -1,6 +1,10 @@
 package com.x695c.tuner
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -10,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.x695c.tuner.data.*
 import com.x695c.tuner.ui.screens.*
@@ -104,9 +109,23 @@ fun TunerApp(
     val memoryConfig by viewModel.memoryConfig.collectAsState()
     val gpuConfig by viewModel.gpuConfig.collectAsState()
     val configAvailability by viewModel.configAvailability.collectAsState()
+    val rootState by viewModel.rootState.collectAsState()
+    val configChangeStatus by viewModel.configChangeStatus.collectAsState()
+
+    val context = LocalContext.current
 
     // Navigation stack
     var screenStack by remember { mutableStateOf<List<Screen>>(listOf(Screen.Main)) }
+
+    // Root request dialog state
+    var showRootDialog by remember { mutableStateOf(false) }
+
+    // Check if we should show root request dialog
+    LaunchedEffect(rootState.isAvailable, rootState.hasBeenRequested) {
+        if (rootState.isAvailable && !rootState.hasBeenRequested) {
+            showRootDialog = true
+        }
+    }
 
     // Helper functions
     fun navigateTo(screen: Screen) {
@@ -122,6 +141,15 @@ fun TunerApp(
         }
     }
 
+    // Copy logs to clipboard
+    fun copyLogsToClipboard() {
+        val logs = viewModel.getFormattedLogs()
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = ClipData.newPlainText("X695C Tuner Logs", logs)
+        clipboard.setPrimaryClip(clip)
+        Toast.makeText(context, "Logs copied to clipboard", Toast.LENGTH_SHORT).show()
+    }
+
     // Back handler for gesture back - intercept and navigate within app
     BackHandler(enabled = screenStack.size > 1) {
         navigateBack()
@@ -132,6 +160,27 @@ fun TunerApp(
     val scenarioConfigAvailable = configAvailability[ConfigFileDetector.ConfigType.PERFORMANCE_SCENARIOS]?.available ?: false
     val memoryConfigAvailable = configAvailability[ConfigFileDetector.ConfigType.MEMORY_MANAGEMENT]?.available ?: false
     val gpuConfigAvailable = configAvailability[ConfigFileDetector.ConfigType.GPU_DVFS]?.available ?: false
+
+    // Check config change status
+    val gameConfigChanged = configChangeStatus[ConfigFileDetector.ConfigType.GAME_WHITELIST]?.hasChanged ?: false
+    val scenarioConfigChanged = configChangeStatus[ConfigFileDetector.ConfigType.PERFORMANCE_SCENARIOS]?.hasChanged ?: false
+    val memoryConfigChanged = configChangeStatus[ConfigFileDetector.ConfigType.MEMORY_MANAGEMENT]?.hasChanged ?: false
+    val gpuConfigChanged = configChangeStatus[ConfigFileDetector.ConfigType.GPU_DVFS]?.hasChanged ?: false
+
+    // Root Request Dialog
+    if (showRootDialog) {
+        RootRequestDialog(
+            onGrant = {
+                showRootDialog = false
+                viewModel.requestRootAccess()
+            },
+            onDismiss = {
+                showRootDialog = false
+                viewModel.dismissRootRequest()
+            },
+            isRequesting = rootState.isRequesting
+        )
+    }
 
     // Scaffold with proper window insets handling for status bar
     Scaffold(
@@ -158,10 +207,17 @@ fun TunerApp(
                     scenarioConfigAvailable = scenarioConfigAvailable,
                     memoryConfigAvailable = memoryConfigAvailable,
                     gpuConfigAvailable = gpuConfigAvailable,
+                    gameConfigChanged = gameConfigChanged,
+                    scenarioConfigChanged = scenarioConfigChanged,
+                    memoryConfigChanged = memoryConfigChanged,
+                    gpuConfigChanged = gpuConfigChanged,
+                    rootState = rootState,
                     onNavigateToGames = { navigateTo(Screen.Games) },
                     onNavigateToScenarios = { navigateTo(Screen.Scenarios) },
                     onNavigateToMemory = { navigateTo(Screen.Memory) },
-                    onNavigateToGpu = { navigateTo(Screen.Gpu) }
+                    onNavigateToGpu = { navigateTo(Screen.Gpu) },
+                    onCopyLogs = { copyLogsToClipboard() },
+                    onRequestRoot = { showRootDialog = true }
                 )
 
                 is Screen.Games -> GameListScreen(
@@ -223,4 +279,73 @@ fun TunerApp(
             }
         }
     }
+}
+
+/**
+ * Root Request Dialog - Prompts user to grant root access
+ */
+@Composable
+fun RootRequestDialog(
+    onGrant: () -> Unit,
+    onDismiss: () -> Unit,
+    isRequesting: Boolean
+) {
+    AlertDialog(
+        onDismissRequest = { if (!isRequesting) onDismiss() },
+        icon = {
+            Icon(
+                imageVector = androidx.compose.material.icons.Icons.Default.AdminPanelSettings,
+                contentDescription = null,
+                modifier = Modifier.size(48.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+        },
+        title = {
+            Text(text = "Root Access Required")
+        },
+        text = {
+            Column {
+                Text(
+                    text = "X695C Vendor Tuner requires root access to modify vendor configuration files.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Without root access, the app can only read configuration files but cannot apply changes.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (isRequesting) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Requesting root access...")
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onGrant,
+                enabled = !isRequesting
+            ) {
+                Text("Grant Root Access")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                enabled = !isRequesting
+            ) {
+                Text("Continue Without Root")
+            }
+        }
+    )
 }

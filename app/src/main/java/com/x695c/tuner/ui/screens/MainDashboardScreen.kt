@@ -26,10 +26,17 @@ fun MainDashboardScreen(
     scenarioConfigAvailable: Boolean = false,
     memoryConfigAvailable: Boolean = false,
     gpuConfigAvailable: Boolean = false,
+    gameConfigChanged: Boolean = false,
+    scenarioConfigChanged: Boolean = false,
+    memoryConfigChanged: Boolean = false,
+    gpuConfigChanged: Boolean = false,
+    rootState: RootState = RootState(),
     onNavigateToGames: () -> Unit,
     onNavigateToScenarios: () -> Unit,
     onNavigateToMemory: () -> Unit,
     onNavigateToGpu: () -> Unit,
+    onCopyLogs: () -> Unit,
+    onRequestRoot: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -54,7 +61,7 @@ fun MainDashboardScreen(
                         modifier = Modifier.size(32.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "X695C Vendor Tuner",
                             style = MaterialTheme.typography.headlineSmall,
@@ -65,6 +72,88 @@ fun MainDashboardScreen(
                             text = "Infinix Note 10 Pro NFC | Helio G95",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    // Root status indicator
+                    RootStatusIndicator(
+                        rootState = rootState,
+                        onRequestRoot = onRequestRoot
+                    )
+                }
+            }
+        }
+
+        // Quick Actions Row - Copy Logs Button
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Copy Logs Button
+            OutlinedButton(
+                onClick = onCopyLogs,
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ContentCopy,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Copy Logs")
+            }
+
+            // Root Access Button (show if not granted)
+            if (!rootState.isGranted && !rootState.isAvailable) {
+                Button(
+                    onClick = onRequestRoot,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AdminPanelSettings,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Request Root")
+                }
+            }
+        }
+
+        // External Changes Warning Card
+        if (gameConfigChanged || scenarioConfigChanged || memoryConfigChanged || gpuConfigChanged) {
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.elevatedCardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.EditNote,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "External Changes Detected",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Text(
+                            text = buildChangedConfigsText(
+                                gameConfigChanged, scenarioConfigChanged,
+                                memoryConfigChanged, gpuConfigChanged
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
                         )
                     }
                 }
@@ -145,12 +234,13 @@ fun MainDashboardScreen(
             modifier = Modifier.padding(top = 8.dp)
         )
 
-        // Config Cards - MD3 Expressive
+        // Config Cards - MD3 Expressive with change indicators
         ConfigCard(
             title = "Game Tuning",
             subtitle = "${gameConfigs.size} games configured",
             icon = Icons.Default.VideogameAsset,
             configAvailable = gameConfigAvailable,
+            hasExternalChange = gameConfigChanged,
             onClick = onNavigateToGames
         )
 
@@ -159,6 +249,7 @@ fun MainDashboardScreen(
             subtitle = "${scenarioConfigs.size} scenarios configured",
             icon = Icons.Default.Speed,
             configAvailable = scenarioConfigAvailable,
+            hasExternalChange = scenarioConfigChanged,
             onClick = onNavigateToScenarios
         )
 
@@ -167,6 +258,7 @@ fun MainDashboardScreen(
             subtitle = "RAM: 6GB Configuration",
             icon = Icons.Default.Memory,
             configAvailable = memoryConfigAvailable,
+            hasExternalChange = memoryConfigChanged,
             onClick = onNavigateToMemory
         )
 
@@ -175,6 +267,7 @@ fun MainDashboardScreen(
             subtitle = "Mali-G76 MC4 @ 720-900 MHz",
             icon = Icons.Default.Games,
             configAvailable = gpuConfigAvailable,
+            hasExternalChange = gpuConfigChanged,
             onClick = onNavigateToGpu
         )
 
@@ -210,6 +303,65 @@ fun MainDashboardScreen(
     }
 }
 
+@Composable
+private fun RootStatusIndicator(
+    rootState: RootState,
+    onRequestRoot: () -> Unit
+) {
+    when {
+        rootState.isGranted -> {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = "Root Granted",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "Root",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+        rootState.isAvailable && !rootState.isGranted -> {
+            IconButton(onClick = onRequestRoot) {
+                Icon(
+                    imageVector = Icons.Default.AdminPanelSettings,
+                    contentDescription = "Request Root",
+                    tint = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        }
+        else -> {
+            Icon(
+                imageVector = Icons.Default.NoCell,
+                contentDescription = "No Root",
+                tint = MaterialTheme.colorScheme.outlineVariant,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun buildChangedConfigsText(
+    gameChanged: Boolean,
+    scenarioChanged: Boolean,
+    memoryChanged: Boolean,
+    gpuChanged: Boolean
+): String {
+    val changed = mutableListOf<String>()
+    if (gameChanged) changed.add("Game")
+    if (scenarioChanged) changed.add("Scenario")
+    if (memoryChanged) changed.add("Memory")
+    if (gpuChanged) changed.add("GPU")
+    
+    return "Config files modified: ${changed.joinToString(", ")}"
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ConfigCard(
@@ -217,6 +369,7 @@ private fun ConfigCard(
     subtitle: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     configAvailable: Boolean,
+    hasExternalChange: Boolean = false,
     onClick: () -> Unit
 ) {
     ElevatedCard(
@@ -232,7 +385,10 @@ private fun ConfigCard(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = if (configAvailable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                tint = if (configAvailable) {
+                    if (hasExternalChange) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.primary
+                } else MaterialTheme.colorScheme.outlineVariant,
                 modifier = Modifier.size(28.dp)
             )
             Spacer(modifier = Modifier.width(16.dp))
@@ -253,11 +409,28 @@ private fun ConfigCard(
                             modifier = Modifier.size(16.dp)
                         )
                     }
+                    if (hasExternalChange) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "External change detected",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
                 }
                 Text(
-                    text = if (configAvailable) subtitle else "Config file not detected",
+                    text = when {
+                        hasExternalChange -> "Externally modified"
+                        configAvailable -> subtitle
+                        else -> "Config file not detected"
+                    },
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (configAvailable) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error
+                    color = when {
+                        hasExternalChange -> MaterialTheme.colorScheme.error
+                        configAvailable -> MaterialTheme.colorScheme.onSurfaceVariant
+                        else -> MaterialTheme.colorScheme.error
+                    }
                 )
             }
             Icon(

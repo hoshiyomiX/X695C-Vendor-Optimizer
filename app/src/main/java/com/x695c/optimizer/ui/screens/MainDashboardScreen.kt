@@ -15,6 +15,7 @@ import com.x695c.optimizer.data.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@Suppress("UNUSED_PARAMETER")
 fun MainDashboardScreen(
     selectedProfile: OptimizationProfile,
     onProfileChange: (OptimizationProfile) -> Unit,

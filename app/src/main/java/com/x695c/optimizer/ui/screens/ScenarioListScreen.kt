@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Launch
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,7 +34,7 @@ fun ScenarioListScreen(
             },
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
@@ -153,7 +155,7 @@ fun ScenarioListScreen(
 }
 
 private fun getScenarioIcon(scenarioName: String) = when (scenarioName) {
-    "LAUNCH" -> Icons.Default.Launch
+    "LAUNCH" -> Icons.AutoMirrored.Filled.Launch
     "MTKPOWER_HINT_APP_TOUCH" -> Icons.Default.TouchApp
     "MTKPOWER_HINT_PROCESS_CREATE" -> Icons.Default.AddCircle
     "MTKPOWER_HINT_APP_ROTATE" -> Icons.Default.ScreenRotation

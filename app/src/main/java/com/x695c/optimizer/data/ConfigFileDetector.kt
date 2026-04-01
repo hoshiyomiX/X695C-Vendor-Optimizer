@@ -8,15 +8,16 @@ import java.io.File
  */
 object ConfigFileDetector {
 
-    // Vendor partition paths for X695C
-    private const val VENDOR_PATH = "/vendor/etc/"
+    // Vendor partition paths for X695C (no trailing slash to avoid double slash)
+    private const val VENDOR_PATH = "/vendor/etc"
+    private const val DATA_VENDOR_PATH = "/data/vendor"
 
     // Config file paths
     val CONFIG_FILES = mapOf(
         ConfigType.GAME_WHITELIST to listOf(
             "$VENDOR_PATH/power_app_cfg.xml",
             "$VENDOR_PATH/powerhint.xml",
-            "/data/vendor/power/power_app_cfg.xml"
+            "$DATA_VENDOR_PATH/power/power_app_cfg.xml"
         ),
         ConfigType.PERFORMANCE_SCENARIOS to listOf(
             "$VENDOR_PATH/powerscntbl.xml",
@@ -25,7 +26,7 @@ object ConfigFileDetector {
         ConfigType.MEMORY_MANAGEMENT to listOf(
             "$VENDOR_PATH/policy_config_6g_ram.json",
             "$VENDOR_PATH/policy_config.json",
-            "/data/vendor/lmkd/policy_config.json"
+            "$DATA_VENDOR_PATH/lmkd/policy_config.json"
         ),
         ConfigType.GPU_DVFS to listOf(
             "$VENDOR_PATH/gpu_dvfs_setting.xml",

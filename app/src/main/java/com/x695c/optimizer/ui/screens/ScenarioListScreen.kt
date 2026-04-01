@@ -25,7 +25,7 @@ fun ScenarioListScreen(
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier.fillMaxSize()) {
-        // Top App Bar
+        // Top App Bar - MD3 Expressive
         TopAppBar(
             title = { 
                 Text(
@@ -39,22 +39,22 @@ fun ScenarioListScreen(
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                titleContentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                titleContentColor = MaterialTheme.colorScheme.onSurface
             )
         )
 
         // Scenario List
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             item {
                 // Config status warning
                 if (!configAvailable) {
-                    Card(
-                        colors = CardDefaults.cardColors(
+                    ElevatedCard(
+                        colors = CardDefaults.elevatedCardColors(
                             containerColor = MaterialTheme.colorScheme.errorContainer
                         )
                     ) {
@@ -87,7 +87,7 @@ fun ScenarioListScreen(
             }
 
             items(scenarioConfigs.entries.toList()) { (scenarioName, config) ->
-                Card(
+                ElevatedCard(
                     onClick = { onScenarioSelect(scenarioName) },
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -101,14 +101,15 @@ fun ScenarioListScreen(
                             imageVector = getScenarioIcon(scenarioName),
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.secondary,
-                            modifier = Modifier.size(40.dp)
+                            modifier = Modifier.size(36.dp)
                         )
                         Spacer(modifier = Modifier.width(16.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = getScenarioDisplayName(scenarioName),
                                 style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
                                 text = getScenarioDescription(scenarioName),
@@ -117,20 +118,20 @@ fun ScenarioListScreen(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Row(
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 if (config.cpuFreqMinCluster0 > 0) {
                                     SuggestionChip(
                                         onClick = {},
                                         label = { 
                                             Text(
-                                                text = "CPU: Max",
+                                                text = "CPU: Boost",
                                                 style = MaterialTheme.typography.labelSmall
                                             )
                                         },
                                         modifier = Modifier.height(24.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(4.dp))
                                 }
                                 if (config.uclampMin.value > 0) {
                                     SuggestionChip(
@@ -148,17 +149,18 @@ fun ScenarioListScreen(
                         }
                         Icon(
                             imageVector = Icons.Default.ChevronRight,
-                            contentDescription = null
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
             }
 
             item {
-                Spacer(modifier = Modifier.height(16.dp))
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                Spacer(modifier = Modifier.height(8.dp))
+                ElevatedCard(
+                    colors = CardDefaults.elevatedCardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                     )
                 ) {
                     Row(
@@ -173,7 +175,8 @@ fun ScenarioListScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Scenarios are triggered automatically by system events.",
-                            style = MaterialTheme.typography.bodySmall
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }

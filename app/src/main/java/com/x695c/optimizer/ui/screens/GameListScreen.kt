@@ -24,7 +24,7 @@ fun GameListScreen(
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier.fillMaxSize()) {
-        // Top App Bar
+        // Top App Bar - MD3 Expressive
         TopAppBar(
             title = { 
                 Text(
@@ -38,22 +38,22 @@ fun GameListScreen(
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                titleContentColor = MaterialTheme.colorScheme.onSurface
             )
         )
 
         // Game List
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             item {
                 // Config status warning
                 if (!configAvailable) {
-                    Card(
-                        colors = CardDefaults.cardColors(
+                    ElevatedCard(
+                        colors = CardDefaults.elevatedCardColors(
                             containerColor = MaterialTheme.colorScheme.errorContainer
                         )
                     ) {
@@ -87,10 +87,9 @@ fun GameListScreen(
 
             items(gameConfigs.entries.toList()) { (packageName, config) ->
                 val gameName = getGameName(packageName)
-                Card(
+                ElevatedCard(
                     onClick = { onGameSelect(packageName) },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = true // Always enabled for viewing
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
                         modifier = Modifier
@@ -102,14 +101,15 @@ fun GameListScreen(
                             imageVector = Icons.Default.VideogameAsset,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(40.dp)
+                            modifier = Modifier.size(36.dp)
                         )
                         Spacer(modifier = Modifier.width(16.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = gameName,
                                 style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
                                 text = packageName,
@@ -118,7 +118,8 @@ fun GameListScreen(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Row(
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 SuggestionChip(
                                     onClick = {},
@@ -130,7 +131,6 @@ fun GameListScreen(
                                     },
                                     modifier = Modifier.height(24.dp)
                                 )
-                                Spacer(modifier = Modifier.width(4.dp))
                                 SuggestionChip(
                                     onClick = {},
                                     label = { 
@@ -145,17 +145,18 @@ fun GameListScreen(
                         }
                         Icon(
                             imageVector = Icons.Default.ChevronRight,
-                            contentDescription = null
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
             }
 
             item {
-                Spacer(modifier = Modifier.height(16.dp))
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                Spacer(modifier = Modifier.height(8.dp))
+                ElevatedCard(
+                    colors = CardDefaults.elevatedCardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                     )
                 ) {
                     Row(
@@ -170,7 +171,8 @@ fun GameListScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "These games have default optimizations from the device. Modify as needed.",
-                            style = MaterialTheme.typography.bodySmall
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }

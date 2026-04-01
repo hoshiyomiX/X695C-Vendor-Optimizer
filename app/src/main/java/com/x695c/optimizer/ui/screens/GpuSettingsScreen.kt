@@ -25,7 +25,7 @@ fun GpuSettingsScreen(
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier.fillMaxSize()) {
-        // Top App Bar with Back Button
+        // Top App Bar - MD3 Expressive
         TopAppBar(
             title = {
                 Column {
@@ -55,12 +55,12 @@ fun GpuSettingsScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // Config status warning
             if (!configAvailable) {
-                Card(
-                    colors = CardDefaults.cardColors(
+                ElevatedCard(
+                    colors = CardDefaults.elevatedCardColors(
                         containerColor = MaterialTheme.colorScheme.errorContainer
                     )
                 ) {
@@ -83,10 +83,10 @@ fun GpuSettingsScreen(
                 }
             }
 
-            // Warning Card
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+            // Warning Card - MD3 Expressive
+            ElevatedCard(
+                colors = CardDefaults.elevatedCardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                 )
             ) {
                 Row(
@@ -101,7 +101,8 @@ fun GpuSettingsScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "High GPU settings may increase battery drain and device temperature.",
-                        style = MaterialTheme.typography.bodySmall
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -173,9 +174,9 @@ fun GpuSettingsScreen(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                OutlinedButton(
+                FilledTonalButton(
                     onClick = { 
                         onConfigChange(GpuDvfsConfig(
                             marginMode = GpuMarginMode.MINIMUM,
@@ -205,7 +206,7 @@ fun GpuSettingsScreen(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 OutlinedButton(
                     onClick = { 
@@ -220,7 +221,7 @@ fun GpuSettingsScreen(
                 ) {
                     Text("Performance")
                 }
-                Button(
+                FilledTonalButton(
                     onClick = { 
                         onConfigChange(GpuDvfsConfig(
                             marginMode = GpuMarginMode.MAXIMUM,

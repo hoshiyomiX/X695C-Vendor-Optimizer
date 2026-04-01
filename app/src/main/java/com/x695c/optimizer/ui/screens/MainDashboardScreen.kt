@@ -43,14 +43,12 @@ fun MainDashboardScreen(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Header Card
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer
-            )
+        // Header Card - MD3 Expressive
+        ElevatedCard(
+            modifier = Modifier.fillMaxWidth()
         ) {
             Column(
                 modifier = Modifier.padding(16.dp)
@@ -59,34 +57,39 @@ fun MainDashboardScreen(
                     Icon(
                         imageVector = Icons.Default.PhoneAndroid,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(32.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
                             text = "X695C Vendor Optimizer",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
                             text = "Infinix Note 10 Pro NFC | Helio G95",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
             }
         }
 
-        // Profile Selection
-        Card {
+        // Profile Selection - MD3 Expressive
+        ElevatedCard(
+            modifier = Modifier.fillMaxWidth()
+        ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
                     text = "Optimization Profile",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 
                 var expanded by remember { mutableStateOf(false) }
                 ExposedDropdownMenuBox(
@@ -104,7 +107,11 @@ fun MainDashboardScreen(
                         },
                         modifier = Modifier
                             .menuAnchor()
-                            .fillMaxWidth()
+                            .fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                        )
                     )
                     ExposedDropdownMenu(
                         expanded = expanded,
@@ -114,10 +121,14 @@ fun MainDashboardScreen(
                             DropdownMenuItem(
                                 text = {
                                     Column {
-                                        Text(profile.displayName)
+                                        Text(
+                                            text = profile.displayName,
+                                            style = MaterialTheme.typography.bodyLarge
+                                        )
                                         Text(
                                             text = profile.description,
-                                            style = MaterialTheme.typography.bodySmall
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                 },
@@ -132,14 +143,16 @@ fun MainDashboardScreen(
             }
         }
 
-        // Quick Access Cards
+        // Section Header
         Text(
             text = "Configuration Sections",
             style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(top = 8.dp)
         )
 
-        // Game Optimization
+        // Config Cards - MD3 Expressive
         ConfigCard(
             title = "Game Optimization",
             subtitle = "${gameConfigs.size} games configured",
@@ -148,7 +161,6 @@ fun MainDashboardScreen(
             onClick = onNavigateToGames
         )
 
-        // Performance Scenarios
         ConfigCard(
             title = "Performance Scenarios",
             subtitle = "${scenarioConfigs.size} scenarios configured",
@@ -157,7 +169,6 @@ fun MainDashboardScreen(
             onClick = onNavigateToScenarios
         )
 
-        // Memory Management
         ConfigCard(
             title = "Memory Management",
             subtitle = "RAM: 6GB Configuration",
@@ -166,17 +177,16 @@ fun MainDashboardScreen(
             onClick = onNavigateToMemory
         )
 
-        // GPU Settings
         ConfigCard(
             title = "GPU DVFS Settings",
-            subtitle = "Margin: ${gpuConfig.marginMode.description}",
+            subtitle = "Mali-G76 MC4 @ 720-900 MHz",
             icon = Icons.Default.Games,
             configAvailable = gpuConfigAvailable,
             onClick = onNavigateToGpu
         )
 
-        // Activity Logs
-        Card(
+        // Activity Logs Card
+        ElevatedCard(
             onClick = onNavigateToLogs,
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -190,14 +200,15 @@ fun MainDashboardScreen(
                     imageVector = Icons.Default.History,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(28.dp)
                 )
                 Spacer(modifier = Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Activity Logs",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
                         text = "${com.x695c.optimizer.data.ActivityLogger.getLogsCount()} entries recorded",
@@ -207,15 +218,16 @@ fun MainDashboardScreen(
                 }
                 Icon(
                     imageVector = Icons.Default.ChevronRight,
-                    contentDescription = null
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
 
-        // Export Button
+        // Action Buttons - MD3 Expressive
         Spacer(modifier = Modifier.height(8.dp))
         
-        Button(
+        FilledTonalButton(
             onClick = {
                 exportedConfig = onExport()
                 showExportDialog = true
@@ -231,7 +243,6 @@ fun MainDashboardScreen(
             Text("Export Configuration")
         }
 
-        // Copy Logs Button
         OutlinedButton(
             onClick = onCopyLogs,
             modifier = Modifier.fillMaxWidth()
@@ -249,38 +260,46 @@ fun MainDashboardScreen(
         if (showExportDialog) {
             AlertDialog(
                 onDismissRequest = { showExportDialog = false },
-                title = { Text("Exported Configuration") },
+                title = { 
+                    Text(
+                        text = "Exported Configuration",
+                        fontWeight = FontWeight.Bold
+                    )
+                },
                 text = {
                     Column {
                         Text(
                             text = "Copy this configuration to your vendor files:",
-                            style = MaterialTheme.typography.bodySmall
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
                         Surface(
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            shape = MaterialTheme.shapes.small
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            shape = MaterialTheme.shapes.medium
                         ) {
                             Text(
                                 text = exportedConfig,
                                 style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.padding(8.dp)
+                                modifier = Modifier.padding(12.dp),
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = { showExportDialog = false }) {
+                    FilledTonalButton(onClick = { showExportDialog = false }) {
                         Text("Close")
                     }
                 }
             )
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(24.dp))
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ConfigCard(
     title: String,
@@ -289,7 +308,7 @@ private fun ConfigCard(
     configAvailable: Boolean,
     onClick: () -> Unit
 ) {
-    Card(
+    ElevatedCard(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -302,8 +321,8 @@ private fun ConfigCard(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = if (configAvailable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                modifier = Modifier.size(32.dp)
+                tint = if (configAvailable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                modifier = Modifier.size(28.dp)
             )
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -311,7 +330,8 @@ private fun ConfigCard(
                     Text(
                         text = title,
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     if (!configAvailable) {
                         Spacer(modifier = Modifier.width(8.dp))
@@ -331,7 +351,8 @@ private fun ConfigCard(
             }
             Icon(
                 imageVector = Icons.Default.ChevronRight,
-                contentDescription = null
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }

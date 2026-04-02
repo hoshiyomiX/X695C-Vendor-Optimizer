@@ -20,10 +20,14 @@ import com.x695c.tuner.data.PerformanceScenarioConfig
 fun ScenarioListScreen(
     scenarioConfigs: Map<String, PerformanceScenarioConfig>,
     configAvailable: Boolean = false,
+    hasModifiedConfigs: Boolean = false,
     onScenarioSelect: (String) -> Unit,
+    onRestoreAll: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showRestoreAllDialog by remember { mutableStateOf(false) }
+
     Column(modifier = modifier.fillMaxSize()) {
         // Top App Bar - MD3 Expressive
         TopAppBar(
@@ -36,6 +40,16 @@ fun ScenarioListScreen(
             navigationIcon = {
                 IconButton(onClick = onBack) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                }
+            },
+            actions = {
+                if (hasModifiedConfigs) {
+                    IconButton(onClick = { showRestoreAllDialog = true }) {
+                        Icon(
+                            Icons.Default.Restore,
+                            contentDescription = "Restore All to Default"
+                        )
+                    }
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
@@ -182,6 +196,24 @@ fun ScenarioListScreen(
                 }
             }
         }
+    }
+    // Restore All confirmation dialog
+    if (showRestoreAllDialog) {
+        AlertDialog(
+            onDismissRequest = { showRestoreAllDialog = false },
+            icon = { Icon(Icons.Default.Restore, contentDescription = null) },
+            title = { Text("Restore All to Default") },
+            text = { Text("Reset ALL performance scenario settings back to the original factory vendor values?") },
+            confirmButton = {
+                FilledTonalButton(onClick = {
+                    showRestoreAllDialog = false
+                    onRestoreAll()
+                }) { Text("Restore All") }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showRestoreAllDialog = false }) { Text("Cancel") }
+            }
+        )
     }
 }
 

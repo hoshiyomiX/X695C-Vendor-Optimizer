@@ -22,6 +22,9 @@ import com.x695c.tuner.ui.screens.*
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Initialize hardcoded vendor defaults from APK assets.
+        // Must happen before ViewModel is created so restore-to-default is available immediately.
+        HardcodedDefaults.initialize(applicationContext)
         enableEdgeToEdge()
         setContent {
             X695CTunerTheme {
@@ -195,8 +198,10 @@ fun TunerApp(
                 is Screen.Games -> GameListScreen(
                     gameConfigs = gameConfigs,
                     configAvailable = gameConfigAvailable,
+                    hasModifiedConfigs = viewModel.hasAnyGameConfigModified(),
                     onGameSelect = { navigateTo(Screen.GameDetail(it)) },
                     onAddGame = { packageName -> viewModel.addCustomGame(packageName) },
+                    onRestoreAll = { viewModel.restoreAllGameConfigs() },
                     onBack = { navigateBack() }
                 )
 
@@ -219,7 +224,9 @@ fun TunerApp(
                 is Screen.Scenarios -> ScenarioListScreen(
                     scenarioConfigs = scenarioConfigs,
                     configAvailable = scenarioConfigAvailable,
+                    hasModifiedConfigs = viewModel.hasAnyScenarioConfigModified(),
                     onScenarioSelect = { navigateTo(Screen.ScenarioDetail(it)) },
+                    onRestoreAll = { viewModel.restoreAllScenarioConfigs() },
                     onBack = { navigateBack() }
                 )
 

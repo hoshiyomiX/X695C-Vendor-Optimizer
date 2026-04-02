@@ -41,75 +41,92 @@ object ConfigFileParser {
             return emptyMap()
         }
         return try {
-            val configs = mutableMapOf<String, GameTuningConfig>()
             val parser = createXmlParserFromFile(file)
-            var currentPackage: String? = null
-            var currentActivity = false
-            val rawParams = mutableMapOf<String, Int>()
-            var config = GameTuningConfig(packageName = "")
-
-            var eventType = parser.eventType
-            while (eventType != XmlPullParser.END_DOCUMENT) {
-                when (eventType) {
-                    XmlPullParser.START_TAG -> when (parser.name) {
-                        "Package" -> {
-                            currentPackage = parser.getAttributeValue(null, "name")
-                            rawParams.clear()
-                            config = GameTuningConfig(packageName = currentPackage ?: "")
-                            currentActivity = false
-                        }
-                        "Activity" -> {
-                            currentActivity = true
-                            val actName = parser.getAttributeValue(null, "name") ?: "Common"
-                            config = config.copy(activityName = actName)
-                        }
-                        "data" -> {
-                            val cmd = parser.getAttributeValue(null, "cmd") ?: ""
-                            val param1 = parser.getAttributeValue(null, "param1")?.toIntOrNull() ?: 0
-                            if (currentActivity && cmd.isNotEmpty()) {
-                                rawParams[cmd] = param1
-                                config = when (cmd) {
-                                    "PERF_RES_THERMAL_POLICY" -> config.copy(thermalPolicy = ThermalPolicy.fromValue(param1))
-                                    "PERF_RES_GPU_GED_MARGIN_MODE" -> config.copy(gpuMarginMode = GpuMarginMode.fromValue(param1))
-                                    "PERF_RES_SCHED_UCLAMP_MIN_TA" -> config.copy(uclampMin = UclampMin.fromValue(param1))
-                                    "PERF_RES_SCHED_BOOST" -> config.copy(schedBoost = SchedBoost.fromValue(param1))
-                                    "PERF_RES_FPS_FPSGO_MARGIN_MODE" -> config.copy(fpsMarginMode = FpsMarginMode.fromValue(param1))
-                                    "PERF_RES_FPS_FPSGO_ADJ_LOADING" -> config.copy(fpsAdjustLoading = param1 == 1)
-                                    "PERF_RES_FPS_FPSGO_LLF_TH" -> config.copy(fpsLoadingThreshold = FpsLoadingThreshold.fromValue(param1))
-                                    "PERF_RES_FPS_FPSGO_GPU_BLOCK_BOOST" -> config.copy(gpuBlockBoost = GpuBlockBoost.fromValue(param1))
-                                    // Frame rescue: accept both vendor names (PERF_RES_FBT_*) and legacy names
-                                    "PERF_RES_FPS_FPSGO_FRAME_RESCUE_F", "PERF_RES_FBT_RESCUE_F" -> config.copy(frameRescueF = param1)
-                                    "PERF_RES_FPS_FPSGO_FRAME_RESCUE_PERCENT", "PERF_RES_FBT_RESCUE_PERCENT" -> config.copy(frameRescuePercent = FrameRescuePercent.fromValue(param1))
-                                    "PERF_RES_FPS_FPSGO_ULTRA_RESCUE", "PERF_RES_FBT_ULTRA_RESCUE" -> config.copy(ultraRescue = param1 == 1)
-                                    "PERF_RES_NET_NETD_BOOST_UID" -> config.copy(networkBoost = NetworkBoost.fromValue(param1))
-                                    "PERF_RES_NET_WIFI_LOW_LATENCY" -> config.copy(wifiLowLatency = if (param1 == 1) WifiLowLatency.ENABLED else WifiLowLatency.DISABLED)
-                                    "PERF_RES_NET_MD_WEAK_SIG_OPT" -> config.copy(weakSignalOpt = if (param1 == 1) WeakSignalOpt.ENABLED else WeakSignalOpt.DISABLED)
-                                    // Cold launch: accept both vendor name and legacy name
-                                    "PERF_RES_COLD_LAUNCH_TIME", "PERF_RES_POWERHAL_WHITELIST_APP_LAUNCH_TIME_COLD" -> config.copy(coldLaunchTime = param1)
-                                    "PERF_RES_GPU_GED_TIMER_BASE_DVFS_MARGIN" -> config.copy(gpuTimerDvfsMargin = param1)
-                                    else -> config
-                                }
-                            }
-                        }
-                    }
-                    XmlPullParser.END_TAG -> when (parser.name) {
-                        "Activity" -> currentActivity = false
-                        "Package" -> {
-                            if (currentPackage != null) {
-                                configs[currentPackage] = config.copy(rawParams = rawParams.toMap())
-                            }
-                            currentPackage = null
-                        }
-                    }
-                }
-                eventType = parser.next()
-            }
-            ActivityLogger.log("ConfigParser", "GAME_CONFIG", "Parsed ${configs.size} game configurations")
-            configs
+            parseGameConfigsFromParser(parser)
         } catch (e: Exception) {
             ActivityLogger.logError("ConfigParser", "PARSE_ERROR: Game config file found but parse FAILED: ${e.message}")
             emptyMap()
         }
+    }
+
+    /**
+     * Parse game configs from a raw XML string.
+     * Used by HardcodedDefaults to parse vendor dump files from assets.
+     */
+    fun parseGameConfigsFromXml(xmlContent: String): Map<String, GameTuningConfig> {
+        return try {
+            val parser = createXmlPullParser(xmlContent)
+            parseGameConfigsFromParser(parser)
+        } catch (e: Exception) {
+            ActivityLogger.logError("ConfigParser", "PARSE_ERROR: Game config XML string parse FAILED: ${e.message}")
+            emptyMap()
+        }
+    }
+
+    /** Shared parsing logic for game config XML. Accepts any XmlPullParser. */
+    private fun parseGameConfigsFromParser(parser: XmlPullParser): Map<String, GameTuningConfig> {
+        val configs = mutableMapOf<String, GameTuningConfig>()
+        var currentPackage: String? = null
+        var currentActivity = false
+        val rawParams = mutableMapOf<String, Int>()
+        var config = GameTuningConfig(packageName = "")
+
+        var eventType = parser.eventType
+        while (eventType != XmlPullParser.END_DOCUMENT) {
+            when (eventType) {
+                XmlPullParser.START_TAG -> when (parser.name) {
+                    "Package" -> {
+                        currentPackage = parser.getAttributeValue(null, "name")
+                        rawParams.clear()
+                        config = GameTuningConfig(packageName = currentPackage ?: "")
+                        currentActivity = false
+                    }
+                    "Activity" -> {
+                        currentActivity = true
+                        val actName = parser.getAttributeValue(null, "name") ?: "Common"
+                        config = config.copy(activityName = actName)
+                    }
+                    "data" -> {
+                        val cmd = parser.getAttributeValue(null, "cmd") ?: ""
+                        val param1 = parser.getAttributeValue(null, "param1")?.toIntOrNull() ?: 0
+                        if (currentActivity && cmd.isNotEmpty()) {
+                            rawParams[cmd] = param1
+                            config = when (cmd) {
+                                "PERF_RES_THERMAL_POLICY" -> config.copy(thermalPolicy = ThermalPolicy.fromValue(param1))
+                                "PERF_RES_GPU_GED_MARGIN_MODE" -> config.copy(gpuMarginMode = GpuMarginMode.fromValue(param1))
+                                "PERF_RES_SCHED_UCLAMP_MIN_TA" -> config.copy(uclampMin = UclampMin.fromValue(param1))
+                                "PERF_RES_SCHED_BOOST" -> config.copy(schedBoost = SchedBoost.fromValue(param1))
+                                "PERF_RES_FPS_FPSGO_MARGIN_MODE" -> config.copy(fpsMarginMode = FpsMarginMode.fromValue(param1))
+                                "PERF_RES_FPS_FPSGO_ADJ_LOADING" -> config.copy(fpsAdjustLoading = param1 == 1)
+                                "PERF_RES_FPS_FPSGO_LLF_TH" -> config.copy(fpsLoadingThreshold = FpsLoadingThreshold.fromValue(param1))
+                                "PERF_RES_FPS_FPSGO_GPU_BLOCK_BOOST" -> config.copy(gpuBlockBoost = GpuBlockBoost.fromValue(param1))
+                                "PERF_RES_FPS_FPSGO_FRAME_RESCUE_F", "PERF_RES_FBT_RESCUE_F" -> config.copy(frameRescueF = param1)
+                                "PERF_RES_FPS_FPSGO_FRAME_RESCUE_PERCENT", "PERF_RES_FBT_RESCUE_PERCENT" -> config.copy(frameRescuePercent = FrameRescuePercent.fromValue(param1))
+                                "PERF_RES_FPS_FPSGO_ULTRA_RESCUE", "PERF_RES_FBT_ULTRA_RESCUE" -> config.copy(ultraRescue = param1 == 1)
+                                "PERF_RES_NET_NETD_BOOST_UID" -> config.copy(networkBoost = NetworkBoost.fromValue(param1))
+                                "PERF_RES_NET_WIFI_LOW_LATENCY" -> config.copy(wifiLowLatency = if (param1 == 1) WifiLowLatency.ENABLED else WifiLowLatency.DISABLED)
+                                "PERF_RES_NET_MD_WEAK_SIG_OPT" -> config.copy(weakSignalOpt = if (param1 == 1) WeakSignalOpt.ENABLED else WeakSignalOpt.DISABLED)
+                                "PERF_RES_COLD_LAUNCH_TIME", "PERF_RES_POWERHAL_WHITELIST_APP_LAUNCH_TIME_COLD" -> config.copy(coldLaunchTime = param1)
+                                "PERF_RES_GPU_GED_TIMER_BASE_DVFS_MARGIN" -> config.copy(gpuTimerDvfsMargin = param1)
+                                else -> config
+                            }
+                        }
+                    }
+                }
+                XmlPullParser.END_TAG -> when (parser.name) {
+                    "Activity" -> currentActivity = false
+                    "Package" -> {
+                        if (currentPackage != null) {
+                            configs[currentPackage] = config.copy(rawParams = rawParams.toMap())
+                        }
+                        currentPackage = null
+                    }
+                }
+            }
+            eventType = parser.next()
+        }
+        ActivityLogger.log("ConfigParser", "GAME_CONFIG", "Parsed ${configs.size} game configurations")
+        return configs
     }
 
     fun parseScenarioConfigs(): Map<String, PerformanceScenarioConfig> {
@@ -119,55 +136,74 @@ object ConfigFileParser {
             return emptyMap()
         }
         return try {
-            val configs = mutableMapOf<String, PerformanceScenarioConfig>()
             val parser = createXmlParserFromFile(file)
-            var scenarioName: String? = null
-            val rawParams = mutableMapOf<String, Int>()
-            var config = PerformanceScenarioConfig(scenarioName = "")
-
-            var eventType = parser.eventType
-            while (eventType != XmlPullParser.END_DOCUMENT) {
-                when (eventType) {
-                    XmlPullParser.START_TAG -> when (parser.name) {
-                        "scenario" -> {
-                            scenarioName = parser.getAttributeValue(null, "powerhint")
-                            rawParams.clear()
-                            config = PerformanceScenarioConfig(scenarioName = scenarioName ?: "")
-                        }
-                        "data" -> {
-                            val cmd = parser.getAttributeValue(null, "cmd") ?: ""
-                            val param1 = parser.getAttributeValue(null, "param1")?.toLongOrNull() ?: 0L
-                            val param1Int = param1.toInt()
-                            rawParams[cmd] = param1Int
-                            config = when (cmd) {
-                                "PERF_RES_CPUFREQ_MIN_CLUSTER_0" -> config.copy(cpuFreqMinCluster0 = param1)
-                                "PERF_RES_CPUFREQ_MIN_CLUSTER_1" -> config.copy(cpuFreqMinCluster1 = param1)
-                                "PERF_RES_DRAM_OPP_MIN" -> config.copy(dramOpp = DramOpp.fromValue(param1Int))
-                                "PERF_RES_SCHED_UCLAMP_MIN_TA" -> config.copy(uclampMin = UclampMin.fromValue(param1Int))
-                                "PERF_RES_SCHED_BOOST" -> config.copy(schedBoost = SchedBoost.fromValue(param1Int))
-                                "PERF_RES_FPS_FBT_TOUCH_BOOST_OPP" -> config.copy(touchBoostOpp = TouchBoostOpp.fromValue(param1Int))
-                                "PERF_RES_FPS_FBT_TOUCH_BOOST_DURATION" -> config.copy(touchBoostDuration = param1)
-                                "PERF_RES_FPS_FBT_BHR_OPP" -> config.copy(bhrOpp = param1Int)
-                                "PERF_RES_POWER_HINT_HOLD_TIME" -> config.copy(holdTime = param1)
-                                "PERF_RES_POWER_HINT_EXT_HINT" -> config.copy(extHint = param1Int)
-                                "PERF_RES_POWER_HINT_EXT_HINT_HOLD_TIME" -> config.copy(extHintHoldTime = param1)
-                                else -> config
-                            }
-                        }
-                    }
-                    XmlPullParser.END_TAG -> if (parser.name == "scenario" && scenarioName != null) {
-                        configs[scenarioName] = config.copy(rawParams = rawParams.toMap())
-                        scenarioName = null
-                    }
-                }
-                eventType = parser.next()
-            }
-            ActivityLogger.log("ConfigParser", "SCENARIO_CONFIG", "Parsed ${configs.size} scenario configurations")
-            configs
+            parseScenarioConfigsFromParser(parser)
         } catch (e: Exception) {
             ActivityLogger.logError("ConfigParser", "PARSE_ERROR: Scenario config file found but parse FAILED: ${e.message}")
             emptyMap()
         }
+    }
+
+    /**
+     * Parse scenario configs from a raw XML string.
+     * Used by HardcodedDefaults to parse vendor dump files from assets.
+     */
+    fun parseScenarioConfigsFromXml(xmlContent: String): Map<String, PerformanceScenarioConfig> {
+        return try {
+            val parser = createXmlPullParser(xmlContent)
+            parseScenarioConfigsFromParser(parser)
+        } catch (e: Exception) {
+            ActivityLogger.logError("ConfigParser", "PARSE_ERROR: Scenario config XML string parse FAILED: ${e.message}")
+            emptyMap()
+        }
+    }
+
+    /** Shared parsing logic for scenario config XML. Accepts any XmlPullParser. */
+    private fun parseScenarioConfigsFromParser(parser: XmlPullParser): Map<String, PerformanceScenarioConfig> {
+        val configs = mutableMapOf<String, PerformanceScenarioConfig>()
+        var scenarioName: String? = null
+        val rawParams = mutableMapOf<String, Int>()
+        var config = PerformanceScenarioConfig(scenarioName = "")
+
+        var eventType = parser.eventType
+        while (eventType != XmlPullParser.END_DOCUMENT) {
+            when (eventType) {
+                XmlPullParser.START_TAG -> when (parser.name) {
+                    "scenario" -> {
+                        scenarioName = parser.getAttributeValue(null, "powerhint")
+                        rawParams.clear()
+                        config = PerformanceScenarioConfig(scenarioName = scenarioName ?: "")
+                    }
+                    "data" -> {
+                        val cmd = parser.getAttributeValue(null, "cmd") ?: ""
+                        val param1 = parser.getAttributeValue(null, "param1")?.toLongOrNull() ?: 0L
+                        val param1Int = param1.toInt()
+                        rawParams[cmd] = param1Int
+                        config = when (cmd) {
+                            "PERF_RES_CPUFREQ_MIN_CLUSTER_0" -> config.copy(cpuFreqMinCluster0 = param1)
+                            "PERF_RES_CPUFREQ_MIN_CLUSTER_1" -> config.copy(cpuFreqMinCluster1 = param1)
+                            "PERF_RES_DRAM_OPP_MIN" -> config.copy(dramOpp = DramOpp.fromValue(param1Int))
+                            "PERF_RES_SCHED_UCLAMP_MIN_TA" -> config.copy(uclampMin = UclampMin.fromValue(param1Int))
+                            "PERF_RES_SCHED_BOOST" -> config.copy(schedBoost = SchedBoost.fromValue(param1Int))
+                            "PERF_RES_FPS_FBT_TOUCH_BOOST_OPP" -> config.copy(touchBoostOpp = TouchBoostOpp.fromValue(param1Int))
+                            "PERF_RES_FPS_FBT_TOUCH_BOOST_DURATION" -> config.copy(touchBoostDuration = param1)
+                            "PERF_RES_FPS_FBT_BHR_OPP" -> config.copy(bhrOpp = param1Int)
+                            "PERF_RES_POWER_HINT_HOLD_TIME" -> config.copy(holdTime = param1)
+                            "PERF_RES_POWER_HINT_EXT_HINT" -> config.copy(extHint = param1Int)
+                            "PERF_RES_POWER_HINT_EXT_HINT_HOLD_TIME" -> config.copy(extHintHoldTime = param1)
+                            else -> config
+                        }
+                    }
+                }
+                XmlPullParser.END_TAG -> if (parser.name == "scenario" && scenarioName != null) {
+                    configs[scenarioName] = config.copy(rawParams = rawParams.toMap())
+                    scenarioName = null
+                }
+            }
+            eventType = parser.next()
+        }
+        ActivityLogger.log("ConfigParser", "SCENARIO_CONFIG", "Parsed ${configs.size} scenario configurations")
+        return configs
     }
 
     fun parseMemoryConfig(): MemoryManagementConfig? {
@@ -178,12 +214,25 @@ object ConfigFileParser {
         }
         return try {
             val content = readDecodedText(file)
-            val json = JSONObject(content)
-            val config = parseMemoryJsonConfig(json)
-            ActivityLogger.log("ConfigParser", "MEMORY_CONFIG", "Successfully parsed memory configuration")
-            config
+            parseMemoryConfigFromJson(content)
         } catch (e: Exception) {
             ActivityLogger.logError("ConfigParser", "PARSE_ERROR: Memory config file found but parse FAILED: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Parse memory config from a raw JSON string.
+     * Used by HardcodedDefaults to parse vendor dump files from assets.
+     */
+    fun parseMemoryConfigFromJson(jsonContent: String): MemoryManagementConfig? {
+        return try {
+            val json = JSONObject(jsonContent)
+            val config = parseMemoryJsonConfig(json)
+            ActivityLogger.log("ConfigParser", "MEMORY_CONFIG", "Successfully parsed memory configuration from JSON string")
+            config
+        } catch (e: Exception) {
+            ActivityLogger.logError("ConfigParser", "PARSE_ERROR: Memory config JSON string parse FAILED: ${e.message}")
             null
         }
     }

@@ -28,7 +28,10 @@ class TunerViewModel : ViewModel() {
     private val _memoryConfig = MutableStateFlow<MemoryManagementConfig?>(null)
     val memoryConfig: StateFlow<MemoryManagementConfig?> = _memoryConfig.asStateFlow()
 
-    // Original vendor defaults — snapshot taken on first load, used for "Restore to Default"
+    // Original vendor defaults — sourced from hardcoded vendor dump (HardcodedDefaults),
+    // NOT from the device's current vendor files. This ensures restore-to-default
+    // always reverts to factory values, even after the user has applied modifications.
+    // Persists across app restarts because HardcodedDefaults loads from APK assets.
     private var originalGameConfigs: Map<String, GameTuningConfig> = emptyMap()
     private var originalScenarioConfigs: Map<String, PerformanceScenarioConfig> = emptyMap()
     private var originalMemoryConfig: MemoryManagementConfig? = null
@@ -164,7 +167,9 @@ class TunerViewModel : ViewModel() {
 
     /**
      * Loads configuration directly from device vendor files.
-     * If device has no config files, maps remain empty — user can add custom entries.
+     * Originals (for restore-to-default) are set from HardcodedDefaults (vendor dump),
+     * NOT from the device's current files. This ensures restore always goes back to
+     * factory values even after the user has applied modifications and rebooted.
      */
     private suspend fun loadConfigsFromDevice() {
         // All parsing runs on IO dispatcher to avoid blocking the main thread
@@ -173,7 +178,6 @@ class TunerViewModel : ViewModel() {
         }
         if (parsedGameConfigs.isNotEmpty()) {
             _gameConfigs.value = parsedGameConfigs
-            originalGameConfigs = parsedGameConfigs.toMap()
             ActivityLogger.log("ConfigParser", "GAME_CONFIGS_LOADED", "Loaded ${parsedGameConfigs.size} game configs from device")
         } else {
             ActivityLogger.log("ConfigParser", "GAME_CONFIGS_EMPTY", "No game configs found on device")
@@ -184,7 +188,6 @@ class TunerViewModel : ViewModel() {
         }
         if (parsedScenarioConfigs.isNotEmpty()) {
             _scenarioConfigs.value = parsedScenarioConfigs
-            originalScenarioConfigs = parsedScenarioConfigs.toMap()
             ActivityLogger.log("ConfigParser", "SCENARIO_CONFIGS_LOADED", "Loaded ${parsedScenarioConfigs.size} scenario configs from device")
         } else {
             ActivityLogger.log("ConfigParser", "SCENARIO_CONFIGS_EMPTY", "No scenario configs found on device")
@@ -195,12 +198,39 @@ class TunerViewModel : ViewModel() {
         }
         if (parsedMemoryConfig != null) {
             _memoryConfig.value = parsedMemoryConfig
-            originalMemoryConfig = parsedMemoryConfig
             ActivityLogger.log("ConfigParser", "MEMORY_CONFIG_LOADED", "Loaded memory config from device")
         } else {
             ActivityLogger.log("ConfigParser", "MEMORY_CONFIG_EMPTY", "No memory config found on device")
         }
+
+        // Set originals from hardcoded vendor dump (factory defaults).
+        // This ensures restore-to-default always reverts to factory values,
+        // not to the device's current (possibly modified) vendor files.
+        snapshotOriginalsFromDefaults()
+
         _uiState.value = _uiState.value.copy(isLoading = false)
+    }
+
+    /**
+     * Set the original snapshots from HardcodedDefaults (vendor dump baked into APK).
+     * These are the authoritative factory values used for all restore operations.
+     */
+    private fun snapshotOriginalsFromDefaults() {
+        val hardcodedGames = HardcodedDefaults.getGameDefaults()
+        if (hardcodedGames.isNotEmpty()) {
+            originalGameConfigs = hardcodedGames
+            ActivityLogger.log("Defaults", "GAME_SNAPSHOT", "Original game defaults set from vendor dump (${hardcodedGames.size} entries)")
+        }
+        val hardcodedScenarios = HardcodedDefaults.getScenarioDefaults()
+        if (hardcodedScenarios.isNotEmpty()) {
+            originalScenarioConfigs = hardcodedScenarios
+            ActivityLogger.log("Defaults", "SCENARIO_SNAPSHOT", "Original scenario defaults set from vendor dump (${hardcodedScenarios.size} entries)")
+        }
+        val hardcodedMemory = HardcodedDefaults.getMemoryDefaults()
+        if (hardcodedMemory != null) {
+            originalMemoryConfig = hardcodedMemory
+            ActivityLogger.log("Defaults", "MEMORY_SNAPSHOT", "Original memory defaults set from vendor dump")
+        }
     }
 
     fun isConfigAvailable(type: ConfigFileDetector.ConfigType): Boolean {
@@ -380,7 +410,7 @@ class TunerViewModel : ViewModel() {
     }
 
     /**
-     * Restore a single game config to its original vendor value.
+     * Restore a single game config to its factory default (from vendor dump).
      */
     fun restoreGameConfig(packageName: String) {
         val original = originalGameConfigs[packageName]
@@ -390,12 +420,14 @@ class TunerViewModel : ViewModel() {
             }
             _selectedProfile.value = TuningProfile.DEFAULT
             _uiState.value = _uiState.value.copy(hasUnsavedChanges = true)
-            ActivityLogger.log("GameTuning", "RESTORE_DEFAULT", "Restored game[$packageName] to vendor default")
+            ActivityLogger.log("GameTuning", "RESTORE_DEFAULT", "Restored game[$packageName] to factory default")
+        } else {
+            ActivityLogger.log("GameTuning", "RESTORE_SKIP", "No factory default for game[$packageName] — not in vendor dump")
         }
     }
 
     /**
-     * Restore a single scenario config to its original vendor value.
+     * Restore a single scenario config to its factory default (from vendor dump).
      */
     fun restoreScenarioConfig(scenarioName: String) {
         val original = originalScenarioConfigs[scenarioName]
@@ -405,34 +437,103 @@ class TunerViewModel : ViewModel() {
             }
             _selectedProfile.value = TuningProfile.DEFAULT
             _uiState.value = _uiState.value.copy(hasUnsavedChanges = true)
-            ActivityLogger.log("PerformanceScenario", "RESTORE_DEFAULT", "Restored scenario[$scenarioName] to vendor default")
+            ActivityLogger.log("PerformanceScenario", "RESTORE_DEFAULT", "Restored scenario[$scenarioName] to factory default")
+        } else {
+            ActivityLogger.log("PerformanceScenario", "RESTORE_SKIP", "No factory default for scenario[$scenarioName] — not in vendor dump")
         }
     }
 
     /**
-     * Restore memory config to its original vendor value.
+     * Restore memory config to its factory default (from vendor dump).
      */
     fun restoreMemoryConfig() {
         val original = originalMemoryConfig ?: return
         _memoryConfig.value = original
         _selectedProfile.value = TuningProfile.DEFAULT
         _uiState.value = _uiState.value.copy(hasUnsavedChanges = true)
-        ActivityLogger.log("MemoryManagement", "RESTORE_DEFAULT", "Restored memory config to vendor default")
+        ActivityLogger.log("MemoryManagement", "RESTORE_DEFAULT", "Restored memory config to factory default")
     }
 
     /**
-     * Check whether a specific config differs from its vendor default.
+     * Restore ALL game configs to their factory defaults.
+     * Replaces the entire game config map with the vendor dump values.
+     * Games added by the user (not in the vendor dump) are preserved.
+     */
+    fun restoreAllGameConfigs() {
+        val defaults = HardcodedDefaults.getGameDefaults()
+        if (defaults.isEmpty()) {
+            ActivityLogger.log("GameTuning", "RESTORE_ALL_SKIP", "No factory defaults available")
+            return
+        }
+        // Merge: factory defaults override existing, user-added games are preserved
+        val restored = _gameConfigs.value.toMutableMap()
+        restored.putAll(defaults)
+        _gameConfigs.value = restored
+        _selectedProfile.value = TuningProfile.DEFAULT
+        _uiState.value = _uiState.value.copy(hasUnsavedChanges = true)
+        ActivityLogger.log("GameTuning", "RESTORE_ALL", "Restored ${defaults.size} game configs to factory defaults")
+    }
+
+    /**
+     * Restore ALL scenario configs to their factory defaults.
+     * Replaces the entire scenario config map with the vendor dump values.
+     */
+    fun restoreAllScenarioConfigs() {
+        val defaults = HardcodedDefaults.getScenarioDefaults()
+        if (defaults.isEmpty()) {
+            ActivityLogger.log("PerformanceScenario", "RESTORE_ALL_SKIP", "No factory defaults available")
+            return
+        }
+        _scenarioConfigs.value = defaults.toMap()
+        _selectedProfile.value = TuningProfile.DEFAULT
+        _uiState.value = _uiState.value.copy(hasUnsavedChanges = true)
+        ActivityLogger.log("PerformanceScenario", "RESTORE_ALL", "Restored ${defaults.size} scenario configs to factory defaults")
+    }
+
+    /**
+     * Restore ALL configs (games, scenarios, memory) to factory defaults.
+     * This is the nuclear reset option.
+     */
+    fun restoreAllConfigs() {
+        restoreAllGameConfigs()
+        restoreAllScenarioConfigs()
+        if (originalMemoryConfig != null) {
+            restoreMemoryConfig()
+        }
+        ActivityLogger.log("RestoreAll", "COMPLETE", "All configurations restored to factory defaults")
+    }
+
+    /**
+     * Check whether a specific config differs from its factory default.
      */
     fun isGameConfigModified(packageName: String): Boolean {
-        return _gameConfigs.value[packageName] != originalGameConfigs[packageName]
+        val current = _gameConfigs.value[packageName]
+        val original = originalGameConfigs[packageName]
+        return current != null && current != original
     }
 
     fun isScenarioConfigModified(scenarioName: String): Boolean {
-        return _scenarioConfigs.value[scenarioName] != originalScenarioConfigs[scenarioName]
+        val current = _scenarioConfigs.value[scenarioName]
+        val original = originalScenarioConfigs[scenarioName]
+        return current != null && current != original
     }
 
     fun isMemoryConfigModified(): Boolean {
-        return _memoryConfig.value != originalMemoryConfig
+        return _memoryConfig.value != null && _memoryConfig.value != originalMemoryConfig
+    }
+
+    /** Check if ANY game config differs from its factory default. */
+    fun hasAnyGameConfigModified(): Boolean {
+        return _gameConfigs.value.any { (pkg, current) ->
+            current != originalGameConfigs[pkg]
+        }
+    }
+
+    /** Check if ANY scenario config differs from its factory default. */
+    fun hasAnyScenarioConfigModified(): Boolean {
+        return _scenarioConfigs.value.any { (name, current) ->
+            current != originalScenarioConfigs[name]
+        }
     }
 
     /**

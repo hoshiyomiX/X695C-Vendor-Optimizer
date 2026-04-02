@@ -19,12 +19,15 @@ import com.x695c.tuner.data.GameTuningConfig
 fun GameListScreen(
     gameConfigs: Map<String, GameTuningConfig>,
     configAvailable: Boolean = false,
+    hasModifiedConfigs: Boolean = false,
     onGameSelect: (String) -> Unit,
     onAddGame: (String) -> Unit,
+    onRestoreAll: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showAddGameDialog by remember { mutableStateOf(false) }
+    var showRestoreAllDialog by remember { mutableStateOf(false) }
     var newPackageName by remember { mutableStateOf("") }
 
     Column(modifier = modifier.fillMaxSize()) {
@@ -42,6 +45,14 @@ fun GameListScreen(
                 }
             },
             actions = {
+                if (hasModifiedConfigs) {
+                    IconButton(onClick = { showRestoreAllDialog = true }) {
+                        Icon(
+                            Icons.Default.Restore,
+                            contentDescription = "Restore All to Default"
+                        )
+                    }
+                }
                 IconButton(onClick = { showAddGameDialog = true }) {
                     Icon(Icons.Default.Add, contentDescription = "Add Game")
                 }
@@ -204,6 +215,30 @@ fun GameListScreen(
                 }
             }
         }
+    }
+
+    // Restore All confirmation dialog
+    if (showRestoreAllDialog) {
+        AlertDialog(
+            onDismissRequest = { showRestoreAllDialog = false },
+            icon = { Icon(Icons.Default.Restore, contentDescription = null) },
+            title = { Text("Restore All to Default") },
+            text = {
+                Text(
+                    "Reset ALL game tuning settings back to the original factory vendor values? " +
+                    "Custom games you added will be preserved."
+                )
+            },
+            confirmButton = {
+                FilledTonalButton(onClick = {
+                    showRestoreAllDialog = false
+                    onRestoreAll()
+                }) { Text("Restore All") }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showRestoreAllDialog = false }) { Text("Cancel") }
+            }
+        )
     }
 
     // Add Game Dialog

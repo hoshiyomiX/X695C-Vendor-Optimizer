@@ -6,7 +6,10 @@ import org.xmlpull.v1.XmlPullParser
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.StringReader
+import java.io.ByteArrayOutputStream
 import java.util.zip.GZIPInputStream
+import java.util.zip.Inflater
+import java.util.zip.InflaterInputStream
 
 /**
  * Parses XML and JSON config files from the vendor partition.
@@ -209,10 +212,12 @@ object ConfigFileParser {
      */
     private fun createXmlParserFromFile(file: File): XmlPullParser {
         val bytes = file.readBytes()
+        val hexHeader = bytes.take(16).joinToString("") { "%02X".format(it) }
+        ActivityLogger.log("ConfigParser", "FILE_DECODE", "File header (hex): $hexHeader (${bytes.size} bytes)")
 
         // Gzip compressed (magic: 0x1F 0x8B)
         if (bytes.size >= 2 && bytes[0] == 0x1F.toByte() && bytes[1] == 0x8B.toByte()) {
-            ActivityLogger.log("ConfigParser", "FILE_DECODE", "Gzip compression detected, decompressing")
+            ActivityLogger.log("ConfigParser", "FILE_DECODE", "Format: GZIP — decompressing")
             val text = GZIPInputStream(ByteArrayInputStream(bytes))
                 .bufferedReader(Charsets.UTF_8).readText()
             return createXmlPullParser(text)
@@ -222,14 +227,41 @@ object ConfigFileParser {
         if (bytes.size >= 4 && bytes[0] == 0x03.toByte() && bytes[1] == 0x00.toByte()
             && bytes[2] == 0x08.toByte() && bytes[3] == 0x00.toByte()
         ) {
-            ActivityLogger.log("ConfigParser", "FILE_DECODE", "Android Binary XML detected, using native parser")
+            ActivityLogger.log("ConfigParser", "FILE_DECODE", "Format: Android Binary XML")
             val parser = Xml.newPullParser()
             parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
             parser.setInput(ByteArrayInputStream(bytes), null)
             return parser
         }
 
-        // Plain text XML
+        // Raw deflate (zlib without header, common in embedded systems)
+        // Try zlib inflate first (many vendor files use zlib-wrapped deflate)
+        if (bytes.size >= 2) {
+            val decompressed = tryDecompress(bytes, "zlib")
+                ?: tryDecompress(bytes, "deflate")
+            if (decompressed != null) {
+                val preview = String(decompressed.take(40).toByteArray(), Charsets.UTF_8)
+                ActivityLogger.log("ConfigParser", "FILE_DECODE", "Format: zlib/deflate compressed — decompressed to ${decompressed.size} bytes, preview: $preview")
+                return if (decompressed[0] == 0x03.toByte() && decompressed[1] == 0x00.toByte()) {
+                    // Decompressed to binary XML
+                    val parser = Xml.newPullParser()
+                    parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
+                    parser.setInput(ByteArrayInputStream(decompressed.toByteArray()), null)
+                    parser
+                } else {
+                    createXmlPullParser(String(decompressed.toByteArray(), Charsets.UTF_8))
+                }
+            }
+        }
+
+        // Plain text XML (starts with '<')
+        if (bytes.isNotEmpty() && bytes[0] == '<'.code.toByte()) {
+            ActivityLogger.log("ConfigParser", "FILE_DECODE", "Format: plain text XML")
+            return createXmlPullParser(String(bytes, Charsets.UTF_8))
+        }
+
+        // Unknown format — log full header for diagnosis
+        ActivityLogger.logError("ConfigParser", "FILE_DECODE: Unknown format! Header hex: $hexHeader — cannot parse")
         return createXmlPullParser(String(bytes, Charsets.UTF_8))
     }
 
@@ -247,8 +279,45 @@ object ConfigFileParser {
                 .bufferedReader(Charsets.UTF_8).readText()
         }
 
+        // Try zlib/deflate decompression for JSON files too
+        if (bytes.isNotEmpty() && bytes[0] != '{'.code.toByte()) {
+            val decompressed = tryDecompress(bytes, "zlib") ?: tryDecompress(bytes, "deflate")
+            if (decompressed != null && decompressed[0] == '{'.code.toByte()) {
+                return String(decompressed.toByteArray(), Charsets.UTF_8)
+            }
+        }
+
         // Plain text
         return String(bytes, Charsets.UTF_8)
+    }
+
+    /**
+     * Try to decompress bytes using the specified algorithm.
+     * Returns decompressed data or null if decompression fails.
+     */
+    private fun tryDecompress(bytes: ByteArray, algorithm: String): ByteArray? {
+        return try {
+            val inflater = when (algorithm) {
+                "zlib" -> Inflater()
+                "deflate" -> Inflater(true) // raw deflate, no zlib header
+                else -> return null
+            }
+            inflater.setInput(bytes)
+            val output = ByteArrayOutputStream()
+            val buffer = ByteArray(4096)
+            var totalRead = 0
+            while (totalRead < bytes.size * 20) { // safety limit
+                val read = inflater.inflate(buffer)
+                if (read == 0 && inflater.needsInput()) break
+                output.write(buffer, 0, read)
+                totalRead += read
+            }
+            inflater.end()
+            val result = output.toByteArray()
+            if (result.size < 10) null else result
+        } catch (e: Exception) {
+            null
+        }
     }
 
     /**

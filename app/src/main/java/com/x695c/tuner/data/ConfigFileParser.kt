@@ -9,7 +9,6 @@ import java.io.StringReader
 import java.io.ByteArrayOutputStream
 import java.util.zip.GZIPInputStream
 import java.util.zip.Inflater
-import java.util.zip.InflaterInputStream
 
 /**
  * Parses XML and JSON config files from the vendor partition.
@@ -246,10 +245,10 @@ object ConfigFileParser {
                     // Decompressed to binary XML
                     val parser = Xml.newPullParser()
                     parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
-                    parser.setInput(ByteArrayInputStream(decompressed.toByteArray()), null)
+                    parser.setInput(ByteArrayInputStream(decompressed), null)
                     parser
                 } else {
-                    createXmlPullParser(String(decompressed.toByteArray(), Charsets.UTF_8))
+                    createXmlPullParser(String(decompressed, Charsets.UTF_8))
                 }
             }
         }
@@ -283,7 +282,7 @@ object ConfigFileParser {
         if (bytes.isNotEmpty() && bytes[0] != '{'.code.toByte()) {
             val decompressed = tryDecompress(bytes, "zlib") ?: tryDecompress(bytes, "deflate")
             if (decompressed != null && decompressed[0] == '{'.code.toByte()) {
-                return String(decompressed.toByteArray(), Charsets.UTF_8)
+                return String(decompressed, Charsets.UTF_8)
             }
         }
 

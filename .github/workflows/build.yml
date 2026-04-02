@@ -42,8 +42,8 @@ jobs:
         SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
       run: |
         if [ -n "$SIGNING_KEYSTORE_BASE64" ]; then
-          printf '%s' "$SIGNING_KEYSTORE_BASE64" | base64 -d > app/release.keystore
-          export SIGNING_KEYSTORE_PATH=app/release.keystore
+          printf '%s' "$SIGNING_KEYSTORE_BASE64" | base64 -d > release.keystore
+          export SIGNING_KEYSTORE_PATH="${GITHUB_WORKSPACE}/release.keystore"
           echo "::notice::Keystore decoded — release APK will be signed"
         else
           echo "::warning::SIGNING_KEYSTORE_BASE64 secret not configured — release APK will be unsigned"

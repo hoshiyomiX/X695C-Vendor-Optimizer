@@ -20,10 +20,14 @@ import com.x695c.tuner.ui.components.*
 fun MemoryManagementScreen(
     config: MemoryManagementConfig? = null,
     configAvailable: Boolean = false,
+    isModified: Boolean = false,
     onConfigChange: (MemoryManagementConfig) -> Unit,
+    onRestoreDefault: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showRestoreDialog by remember { mutableStateOf(false) }
+
     Column(modifier = modifier.fillMaxSize()) {
         // Top App Bar - MD3 Expressive
         TopAppBar(
@@ -42,6 +46,16 @@ fun MemoryManagementScreen(
             navigationIcon = {
                 IconButton(onClick = onBack) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                }
+            },
+            actions = {
+                if (config != null && isModified) {
+                    IconButton(onClick = { showRestoreDialog = true }) {
+                        Icon(
+                            Icons.Default.Restore,
+                            contentDescription = "Restore to Default"
+                        )
+                    }
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
@@ -360,5 +374,24 @@ fun MemoryManagementScreen(
             Spacer(modifier = Modifier.height(32.dp))
         }
         } // else: config != null
+
+        // Restore to Default confirmation dialog
+        if (showRestoreDialog) {
+            AlertDialog(
+                onDismissRequest = { showRestoreDialog = false },
+                icon = { Icon(Icons.Default.Restore, contentDescription = null) },
+                title = { Text("Restore to Default") },
+                text = { Text("Reset all memory management settings back to the original vendor values?") },
+                confirmButton = {
+                    FilledTonalButton(onClick = {
+                        showRestoreDialog = false
+                        onRestoreDefault()
+                    }) { Text("Restore") }
+                },
+                dismissButton = {
+                    OutlinedButton(onClick = { showRestoreDialog = false }) { Text("Cancel") }
+                }
+            )
+        }
     } // outer Column
 }

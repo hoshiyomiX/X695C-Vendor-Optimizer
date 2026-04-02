@@ -20,10 +20,14 @@ import com.x695c.tuner.ui.components.*
 fun PerformanceScenarioScreen(
     scenarioName: String,
     config: PerformanceScenarioConfig,
+    isModified: Boolean = false,
     onConfigChange: (PerformanceScenarioConfig) -> Unit,
+    onRestoreDefault: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showRestoreDialog by remember { mutableStateOf(false) }
+
     Column(modifier = modifier.fillMaxSize()) {
         // Top App Bar - MD3 Expressive
         TopAppBar(
@@ -42,6 +46,16 @@ fun PerformanceScenarioScreen(
             navigationIcon = {
                 IconButton(onClick = onBack) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                }
+            },
+            actions = {
+                if (isModified) {
+                    IconButton(onClick = { showRestoreDialog = true }) {
+                        Icon(
+                            Icons.Default.Restore,
+                            contentDescription = "Restore to Default"
+                        )
+                    }
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
@@ -213,5 +227,24 @@ fun PerformanceScenarioScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
         }
+    }
+
+    // Restore to Default confirmation dialog
+    if (showRestoreDialog) {
+        AlertDialog(
+            onDismissRequest = { showRestoreDialog = false },
+            icon = { Icon(Icons.Default.Restore, contentDescription = null) },
+            title = { Text("Restore to Default") },
+            text = { Text("Reset all performance settings for this scenario back to the original vendor values?") },
+            confirmButton = {
+                FilledTonalButton(onClick = {
+                    showRestoreDialog = false
+                    onRestoreDefault()
+                }) { Text("Restore") }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showRestoreDialog = false }) { Text("Cancel") }
+            }
+        )
     }
 }

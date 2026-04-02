@@ -206,7 +206,9 @@ fun TunerApp(
                         GameTuningScreen(
                             packageName = currentScreen.packageName,
                             config = config,
+                            isModified = viewModel.isGameConfigModified(currentScreen.packageName),
                             onConfigChange = { viewModel.updateGameConfig(currentScreen.packageName, it) },
+                            onRestoreDefault = { viewModel.restoreGameConfig(currentScreen.packageName) },
                             onBack = { navigateBack() }
                         )
                     } else {
@@ -227,7 +229,9 @@ fun TunerApp(
                         PerformanceScenarioScreen(
                             scenarioName = currentScreen.scenarioName,
                             config = config,
+                            isModified = viewModel.isScenarioConfigModified(currentScreen.scenarioName),
                             onConfigChange = { viewModel.updateScenarioConfig(currentScreen.scenarioName, it) },
+                            onRestoreDefault = { viewModel.restoreScenarioConfig(currentScreen.scenarioName) },
                             onBack = { navigateBack() }
                         )
                     } else {
@@ -238,7 +242,9 @@ fun TunerApp(
                 is Screen.Memory -> MemoryManagementScreen(
                     config = memoryConfig,
                     configAvailable = memoryConfigAvailable,
+                    isModified = viewModel.isMemoryConfigModified(),
                     onConfigChange = { viewModel.updateMemoryConfig(it) },
+                    onRestoreDefault = { viewModel.restoreMemoryConfig() },
                     onBack = { navigateBack() }
                 )
             }

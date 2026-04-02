@@ -28,6 +28,11 @@ class TunerViewModel : ViewModel() {
     private val _memoryConfig = MutableStateFlow<MemoryManagementConfig?>(null)
     val memoryConfig: StateFlow<MemoryManagementConfig?> = _memoryConfig.asStateFlow()
 
+    // Original vendor defaults — snapshot taken on first load, used for "Restore to Default"
+    private var originalGameConfigs: Map<String, GameTuningConfig> = emptyMap()
+    private var originalScenarioConfigs: Map<String, PerformanceScenarioConfig> = emptyMap()
+    private var originalMemoryConfig: MemoryManagementConfig? = null
+
     // Config file availability status
     private val _configAvailability = MutableStateFlow<Map<ConfigFileDetector.ConfigType, ConfigFileDetector.ConfigStatus>>(emptyMap())
     val configAvailability: StateFlow<Map<ConfigFileDetector.ConfigType, ConfigFileDetector.ConfigStatus>> = _configAvailability.asStateFlow()
@@ -168,6 +173,7 @@ class TunerViewModel : ViewModel() {
         }
         if (parsedGameConfigs.isNotEmpty()) {
             _gameConfigs.value = parsedGameConfigs
+            originalGameConfigs = parsedGameConfigs.toMap()
             ActivityLogger.log("ConfigParser", "GAME_CONFIGS_LOADED", "Loaded ${parsedGameConfigs.size} game configs from device")
         } else {
             ActivityLogger.log("ConfigParser", "GAME_CONFIGS_EMPTY", "No game configs found on device")
@@ -178,6 +184,7 @@ class TunerViewModel : ViewModel() {
         }
         if (parsedScenarioConfigs.isNotEmpty()) {
             _scenarioConfigs.value = parsedScenarioConfigs
+            originalScenarioConfigs = parsedScenarioConfigs.toMap()
             ActivityLogger.log("ConfigParser", "SCENARIO_CONFIGS_LOADED", "Loaded ${parsedScenarioConfigs.size} scenario configs from device")
         } else {
             ActivityLogger.log("ConfigParser", "SCENARIO_CONFIGS_EMPTY", "No scenario configs found on device")
@@ -188,6 +195,7 @@ class TunerViewModel : ViewModel() {
         }
         if (parsedMemoryConfig != null) {
             _memoryConfig.value = parsedMemoryConfig
+            originalMemoryConfig = parsedMemoryConfig
             ActivityLogger.log("ConfigParser", "MEMORY_CONFIG_LOADED", "Loaded memory config from device")
         } else {
             ActivityLogger.log("ConfigParser", "MEMORY_CONFIG_EMPTY", "No memory config found on device")
@@ -369,6 +377,62 @@ class TunerViewModel : ViewModel() {
         _selectedProfile.value = TuningProfile.CUSTOM
         _uiState.value = _uiState.value.copy(hasUnsavedChanges = true)
         ActivityLogger.log("GameTuning", "REMOVE_GAME", "Removed game: $packageName")
+    }
+
+    /**
+     * Restore a single game config to its original vendor value.
+     */
+    fun restoreGameConfig(packageName: String) {
+        val original = originalGameConfigs[packageName]
+        if (original != null) {
+            _gameConfigs.update { configs ->
+                configs.toMutableMap().apply { this[packageName] = original }
+            }
+            _selectedProfile.value = TuningProfile.DEFAULT
+            _uiState.value = _uiState.value.copy(hasUnsavedChanges = true)
+            ActivityLogger.log("GameTuning", "RESTORE_DEFAULT", "Restored game[$packageName] to vendor default")
+        }
+    }
+
+    /**
+     * Restore a single scenario config to its original vendor value.
+     */
+    fun restoreScenarioConfig(scenarioName: String) {
+        val original = originalScenarioConfigs[scenarioName]
+        if (original != null) {
+            _scenarioConfigs.update { configs ->
+                configs.toMutableMap().apply { this[scenarioName] = original }
+            }
+            _selectedProfile.value = TuningProfile.DEFAULT
+            _uiState.value = _uiState.value.copy(hasUnsavedChanges = true)
+            ActivityLogger.log("PerformanceScenario", "RESTORE_DEFAULT", "Restored scenario[$scenarioName] to vendor default")
+        }
+    }
+
+    /**
+     * Restore memory config to its original vendor value.
+     */
+    fun restoreMemoryConfig() {
+        val original = originalMemoryConfig ?: return
+        _memoryConfig.value = original
+        _selectedProfile.value = TuningProfile.DEFAULT
+        _uiState.value = _uiState.value.copy(hasUnsavedChanges = true)
+        ActivityLogger.log("MemoryManagement", "RESTORE_DEFAULT", "Restored memory config to vendor default")
+    }
+
+    /**
+     * Check whether a specific config differs from its vendor default.
+     */
+    fun isGameConfigModified(packageName: String): Boolean {
+        return _gameConfigs.value[packageName] != originalGameConfigs[packageName]
+    }
+
+    fun isScenarioConfigModified(scenarioName: String): Boolean {
+        return _scenarioConfigs.value[scenarioName] != originalScenarioConfigs[scenarioName]
+    }
+
+    fun isMemoryConfigModified(): Boolean {
+        return _memoryConfig.value != originalMemoryConfig
     }
 
     /**

@@ -349,14 +349,14 @@ object ConfigWriter {
             if (config.gpuBlockBoost != GpuBlockBoost.DISABLED) {
                 sb.appendLine("      <data cmd=\"PERF_RES_FPS_FPSGO_GPU_BLOCK_BOOST\" param1=\"${resolveGameParam(config, "PERF_RES_FPS_FPSGO_GPU_BLOCK_BOOST", config.gpuBlockBoost.value)}\"/>")
             }
-            // Frame rescue
+            // Frame rescue (vendor uses PERF_RES_FBT_* names)
             if (config.frameRescuePercent != FrameRescuePercent.NONE) {
-                sb.appendLine("      <data cmd=\"PERF_RES_FPS_FPSGO_FRAME_RESCUE_F\" param1=\"${config.frameRescueF}\"/>")
-                sb.appendLine("      <data cmd=\"PERF_RES_FPS_FPSGO_FRAME_RESCUE_PERCENT\" param1=\"${resolveGameParam(config, "PERF_RES_FPS_FPSGO_FRAME_RESCUE_PERCENT", config.frameRescuePercent.value)}\"/>")
+                sb.appendLine("      <data cmd=\"PERF_RES_FBT_RESCUE_F\" param1=\"${config.frameRescueF}\"/>")
+                sb.appendLine("      <data cmd=\"PERF_RES_FBT_RESCUE_PERCENT\" param1=\"${resolveGameParam(config, "PERF_RES_FBT_RESCUE_PERCENT", config.frameRescuePercent.value)}\"/>")
             }
-            // Ultra rescue
+            // Ultra rescue (vendor uses PERF_RES_FBT_ULTRA_RESCUE)
             if (config.ultraRescue) {
-                sb.appendLine("      <data cmd=\"PERF_RES_FPS_FPSGO_ULTRA_RESCUE\" param1=\"1\"/>")
+                sb.appendLine("      <data cmd=\"PERF_RES_FBT_ULTRA_RESCUE\" param1=\"1\"/>")
             }
             // Network boost
             if (config.networkBoost != NetworkBoost.DISABLED) {
@@ -370,9 +370,9 @@ object ConfigWriter {
             if (config.weakSignalOpt == WeakSignalOpt.ENABLED) {
                 sb.appendLine("      <data cmd=\"PERF_RES_NET_MD_WEAK_SIG_OPT\" param1=\"1\"/>")
             }
-            // Cold launch time
+            // Cold launch time (vendor uses PERF_RES_POWERHAL_WHITELIST_APP_LAUNCH_TIME_COLD)
             if (config.coldLaunchTime > 0) {
-                sb.appendLine("      <data cmd=\"PERF_RES_COLD_LAUNCH_TIME\" param1=\"${config.coldLaunchTime}\"/>")
+                sb.appendLine("      <data cmd=\"PERF_RES_POWERHAL_WHITELIST_APP_LAUNCH_TIME_COLD\" param1=\"${config.coldLaunchTime}\"/>")
             }
 
             // FLOW-C001 fix: write any additional rawParams that were in the original XML
@@ -381,9 +381,13 @@ object ConfigWriter {
                 "PERF_RES_THERMAL_POLICY", "PERF_RES_GPU_GED_MARGIN_MODE", "PERF_RES_GPU_GED_TIMER_BASE_DVFS_MARGIN",
                 "PERF_RES_SCHED_UCLAMP_MIN_TA", "PERF_RES_SCHED_BOOST", "PERF_RES_FPS_FPSGO_MARGIN_MODE",
                 "PERF_RES_FPS_FPSGO_ADJ_LOADING", "PERF_RES_FPS_FPSGO_LLF_TH", "PERF_RES_FPS_FPSGO_GPU_BLOCK_BOOST",
+                "PERF_RES_FBT_RESCUE_F", "PERF_RES_FBT_RESCUE_PERCENT",
+                "PERF_RES_FBT_ULTRA_RESCUE", "PERF_RES_NET_NETD_BOOST_UID",
+                "PERF_RES_NET_WIFI_LOW_LATENCY", "PERF_RES_NET_MD_WEAK_SIG_OPT",
+                "PERF_RES_POWERHAL_WHITELIST_APP_LAUNCH_TIME_COLD",
+                // Legacy aliases (preserved for rawParams dedup)
                 "PERF_RES_FPS_FPSGO_FRAME_RESCUE_F", "PERF_RES_FPS_FPSGO_FRAME_RESCUE_PERCENT",
-                "PERF_RES_FPS_FPSGO_ULTRA_RESCUE", "PERF_RES_NET_NETD_BOOST_UID",
-                "PERF_RES_NET_WIFI_LOW_LATENCY", "PERF_RES_NET_MD_WEAK_SIG_OPT", "PERF_RES_COLD_LAUNCH_TIME"
+                "PERF_RES_FPS_FPSGO_ULTRA_RESCUE", "PERF_RES_COLD_LAUNCH_TIME"
             )
             config.rawParams.forEach { (cmd, param1) ->
                 if (cmd !in coveredCmds) {
@@ -464,9 +468,24 @@ object ConfigWriter {
         return sb.toString()
     }
 
+    /**
+     * Build memory config JSON using READ-MODIFY-WRITE pattern.
+     * Reads the original file, merges our changes into it, writes back.
+     * This preserves ALL vendor sections we don't explicitly manage
+     * (platform_list, game_list, social_list, tracker, interval, provider_filter, etc.)
+     *
+     * Falls back to creating a new JSON if the original file is unreadable.
+     */
     private fun buildMemoryConfigJson(config: MemoryManagementConfig): String {
-        val json = JSONObject()
+        // Try read-modify-write: read original JSON, merge our sections, preserve everything else
+        val originalJson = try {
+            val content = readVendorFileWithRoot(MEMORY_CONFIG_PATH)
+            if (content != null) JSONObject(content) else null
+        } catch (_: Exception) { null }
 
+        val json = originalJson ?: JSONObject()
+
+        // Always overwrite the 4 sections we manage — preserve all others
         val thresholds = JSONObject().apply {
             put("adj_native", config.thresholds.adjNative)
             put("adj_system", config.thresholds.adjSystem)
@@ -512,6 +531,12 @@ object ConfigWriter {
             put("allow_clean_sys", config.features.allowCleanSys)
             put("allow_clean_gms", config.features.allowCleanGms)
             put("allow_clean_3rd", config.features.allowClean3rd)
+            put("ux_detector_protect", config.features.uxDetectorProtect)
+            put("platform_cloud_update", config.features.platformCloudUpdate)
+            put("tpms_cloud_update", config.features.tpmsCloudUpdate)
+            put("not_limit_fcm_send", config.features.notLimitFcmSend)
+            put("not_limit_schedule_run", config.features.notLimitScheduleRun)
+            put("not_limit_tpms_send", config.features.notLimitTpmsSend)
         }
         json.put("feature", features)
 
@@ -519,9 +544,18 @@ object ConfigWriter {
             put("recent_task", config.recentTaskCount)
             put("notification", config.notificationCount)
             put("cached_proc", config.cachedProcCount)
+            put("ux_detector_app", config.uxDetectorApp)
         }
         json.put("number", number)
 
         return json.toString(2)
+    }
+
+    /** Read a file from vendor partition using root. Returns null if unreadable. */
+    private fun readVendorFileWithRoot(filePath: String): String? {
+        return try {
+            val (exitCode, output) = executeRootCommand("cat \"$filePath\" 2>/dev/null")
+            if (exitCode == 0 && output.isNotBlank()) output.trim() else null
+        } catch (_: Exception) { null }
     }
 }

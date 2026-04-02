@@ -76,7 +76,8 @@ fun PerformanceScenarioScreen(
                     1400000L to "1.4 GHz",
                     1600000L to "1.6 GHz",
                     1800000L to "1.8 GHz",
-                    2000000L to "2.0 GHz (Max)"
+                    2000000L to "2.0 GHz (Max)",
+                    3000000L to "3.0 GHz (Vendor Override)"
                 ),
                 onValueChange = { onConfigChange(config.copy(cpuFreqMinCluster0 = it)) }
             )
@@ -93,7 +94,8 @@ fun PerformanceScenarioScreen(
                     1600000L to "1.6 GHz",
                     1800000L to "1.8 GHz",
                     2000000L to "2.0 GHz",
-                    2050000L to "2.05 GHz (Max)"
+                    2050000L to "2.05 GHz (Max)",
+                    3000000L to "3.0 GHz (Vendor Override)"
                 ),
                 onValueChange = { onConfigChange(config.copy(cpuFreqMinCluster1 = it)) }
             )

@@ -263,7 +263,14 @@ data class MemoryFeatureConfig(
     val limit3rdStart: Boolean = true,
     val allowCleanSys: Boolean = false,
     val allowCleanGms: Boolean = false,
-    val allowClean3rd: Boolean = true
+    val allowClean3rd: Boolean = true,
+    // Vendor-specific feature flags (preserved on read/write)
+    val uxDetectorProtect: Boolean = true,
+    val platformCloudUpdate: Boolean = true,
+    val tpmsCloudUpdate: Boolean = true,
+    val notLimitFcmSend: Boolean = false,
+    val notLimitScheduleRun: Boolean = false,
+    val notLimitTpmsSend: Boolean = false
 )
 
 data class MemoryManagementConfig(
@@ -272,7 +279,8 @@ data class MemoryManagementConfig(
     val features: MemoryFeatureConfig = MemoryFeatureConfig(),
     val recentTaskCount: Int = 6,
     val notificationCount: Int = 4,
-    val cachedProcCount: Int = 16
+    val cachedProcCount: Int = 16,
+    val uxDetectorApp: Int = 1
 )
 
 // ==================== PRESET PROFILES ====================

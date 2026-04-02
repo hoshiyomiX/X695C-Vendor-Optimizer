@@ -159,13 +159,15 @@ object ConfigFileParser {
                 "PERF_RES_FPS_FPSGO_ADJ_LOADING" -> currentConfig.copy(fpsAdjustLoading = param1 == 1)
                 "PERF_RES_FPS_FPSGO_LLF_TH" -> currentConfig.copy(fpsLoadingThreshold = FpsLoadingThreshold.fromValue(param1))
                 "PERF_RES_FPS_FPSGO_GPU_BLOCK_BOOST" -> currentConfig.copy(gpuBlockBoost = GpuBlockBoost.fromValue(param1))
-                "PERF_RES_FPS_FPSGO_FRAME_RESCUE_F" -> currentConfig.copy(frameRescueF = param1)
-                "PERF_RES_FPS_FPSGO_FRAME_RESCUE_PERCENT" -> currentConfig.copy(frameRescuePercent = FrameRescuePercent.fromValue(param1))
-                "PERF_RES_FPS_FPSGO_ULTRA_RESCUE" -> currentConfig.copy(ultraRescue = param1 == 1)
+                // Frame rescue: accept both vendor names (PERF_RES_FBT_*) and legacy names
+                "PERF_RES_FPS_FPSGO_FRAME_RESCUE_F", "PERF_RES_FBT_RESCUE_F" -> currentConfig.copy(frameRescueF = param1)
+                "PERF_RES_FPS_FPSGO_FRAME_RESCUE_PERCENT", "PERF_RES_FBT_RESCUE_PERCENT" -> currentConfig.copy(frameRescuePercent = FrameRescuePercent.fromValue(param1))
+                "PERF_RES_FPS_FPSGO_ULTRA_RESCUE", "PERF_RES_FBT_ULTRA_RESCUE" -> currentConfig.copy(ultraRescue = param1 == 1)
                 "PERF_RES_NET_NETD_BOOST_UID" -> currentConfig.copy(networkBoost = NetworkBoost.fromValue(param1))
                 "PERF_RES_NET_WIFI_LOW_LATENCY" -> currentConfig.copy(wifiLowLatency = if (param1 == 1) WifiLowLatency.ENABLED else WifiLowLatency.DISABLED)
                 "PERF_RES_NET_MD_WEAK_SIG_OPT" -> currentConfig.copy(weakSignalOpt = if (param1 == 1) WeakSignalOpt.ENABLED else WeakSignalOpt.DISABLED)
-                "PERF_RES_COLD_LAUNCH_TIME" -> currentConfig.copy(coldLaunchTime = param1)
+                // Cold launch: accept both vendor name and legacy name
+                "PERF_RES_COLD_LAUNCH_TIME", "PERF_RES_POWERHAL_WHITELIST_APP_LAUNCH_TIME_COLD" -> currentConfig.copy(coldLaunchTime = param1)
                 "PERF_RES_GPU_GED_TIMER_BASE_DVFS_MARGIN" -> currentConfig.copy(gpuTimerDvfsMargin = param1)
                 else -> currentConfig
             }
@@ -210,6 +212,7 @@ object ConfigFileParser {
         var recentTaskCount = 6
         var notificationCount = 4
         var cachedProcCount = 16
+        var uxDetectorApp = 1
 
         if (json.has("total_mem")) {
             val thresholdsJson = json.getJSONObject("total_mem")
@@ -261,7 +264,13 @@ object ConfigFileParser {
                 limit3rdStart = featuresJson.optBoolean("limit_3rd_start", true),
                 allowCleanSys = featuresJson.optBoolean("allow_clean_sys", false),
                 allowCleanGms = featuresJson.optBoolean("allow_clean_gms", false),
-                allowClean3rd = featuresJson.optBoolean("allow_clean_3rd", true)
+                allowClean3rd = featuresJson.optBoolean("allow_clean_3rd", true),
+                uxDetectorProtect = featuresJson.optBoolean("ux_detector_protect", true),
+                platformCloudUpdate = featuresJson.optBoolean("platform_cloud_update", true),
+                tpmsCloudUpdate = featuresJson.optBoolean("tpms_cloud_update", true),
+                notLimitFcmSend = featuresJson.optBoolean("not_limit_fcm_send", false),
+                notLimitScheduleRun = featuresJson.optBoolean("not_limit_schedule_run", false),
+                notLimitTpmsSend = featuresJson.optBoolean("not_limit_tpms_send", false)
             )
         }
 
@@ -270,6 +279,7 @@ object ConfigFileParser {
             recentTaskCount = numberJson.optInt("recent_task", 6)
             notificationCount = numberJson.optInt("notification", 4)
             cachedProcCount = numberJson.optInt("cached_proc", 16)
+            uxDetectorApp = numberJson.optInt("ux_detector_app", 1)
         }
 
         return MemoryManagementConfig(
@@ -278,7 +288,8 @@ object ConfigFileParser {
             features = features,
             recentTaskCount = recentTaskCount,
             notificationCount = notificationCount,
-            cachedProcCount = cachedProcCount
+            cachedProcCount = cachedProcCount,
+            uxDetectorApp = uxDetectorApp
         )
     }
 }

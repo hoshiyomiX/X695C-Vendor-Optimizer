@@ -77,7 +77,8 @@ fun IntDropdownSelector(
     enabled: Boolean = true
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val selectedOption = options.find { it.first == value } ?: options.first()
+    val selectedOption = options.find { it.first == value }
+    val displayText = selectedOption?.second ?: "Custom: $value"
     
     Column(modifier = modifier) {
         Text(
@@ -92,7 +93,7 @@ fun IntDropdownSelector(
             modifier = Modifier.fillMaxWidth()
         ) {
             OutlinedTextField(
-                value = selectedOption.second,
+                value = displayText,
                 onValueChange = {},
                 readOnly = true,
                 enabled = enabled,
@@ -137,7 +138,8 @@ fun LongDropdownSelector(
     enabled: Boolean = true
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val selectedOption = options.find { it.first == value } ?: options.first()
+    val selectedOption = options.find { it.first == value }
+    val displayText = selectedOption?.second ?: "Custom: $value"
     
     Column(modifier = modifier) {
         Text(
@@ -152,7 +154,7 @@ fun LongDropdownSelector(
             modifier = Modifier.fillMaxWidth()
         ) {
             OutlinedTextField(
-                value = selectedOption.second,
+                value = displayText,
                 onValueChange = {},
                 readOnly = true,
                 enabled = enabled,

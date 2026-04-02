@@ -191,6 +191,7 @@ fun TunerApp(
                     onCopyLogs = { copyLogsToClipboard() },
                     onApplyConfiguration = { viewModel.applyConfiguration() },
                     onDismissApplyResult = { viewModel.dismissApplyResult() },
+                    onRebootDevice = { viewModel.rebootDevice() },
                     // FLOW-H006: Wire up root request flow (was dead code — onRequestRoot defaulted to {})
                     onRequestRoot = { viewModel.requestRootAccess() }
                 )

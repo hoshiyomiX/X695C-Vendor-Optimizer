@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.ProcessBuilder
 
 class TunerViewModel : ViewModel() {
 
@@ -627,6 +628,24 @@ class TunerViewModel : ViewModel() {
         _applyState.value = _applyState.value.copy(showResultDialog = false)
     }
 
+    /**
+     * Reboot the device using root privileges.
+     * Called after applying new preset so the system reloads vendor configs.
+     */
+    fun rebootDevice() {
+        viewModelScope.launch {
+            try {
+                ActivityLogger.log("Device", "REBOOT", "User requested device reboot")
+                val processBuilder = ProcessBuilder("su", "-c", "reboot")
+                processBuilder.start()
+                // If we reach here, reboot command was sent successfully
+                // Device will reboot — app won't continue
+            } catch (e: Exception) {
+                ActivityLogger.logError("Device", "Reboot failed: ${e.message}")
+            }
+        }
+    }
+
     fun hasUnsavedChanges(): Boolean = _uiState.value.hasUnsavedChanges
 }
 
@@ -647,7 +666,8 @@ data class RootState(
 data class ApplyState(
     val isApplying: Boolean = false,
     val lastResult: ApplyResult? = null,
-    val showResultDialog: Boolean = false
+    val showResultDialog: Boolean = false,
+    val isRebooting: Boolean = false
 )
 
 data class ApplyResult(

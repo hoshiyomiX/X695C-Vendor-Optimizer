@@ -36,6 +36,7 @@ fun MainDashboardScreen(
     onRequestRoot: () -> Unit = {},
     onApplyConfiguration: () -> Unit,
     onDismissApplyResult: () -> Unit,
+    onRebootDevice: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -363,7 +364,8 @@ fun MainDashboardScreen(
     if (applyState.showResultDialog && applyState.lastResult != null) {
         ApplyResultDialog(
             result = applyState.lastResult,
-            onDismiss = onDismissApplyResult
+            onDismiss = onDismissApplyResult,
+            onReboot = onRebootDevice
         )
     }
 }
@@ -374,7 +376,8 @@ fun MainDashboardScreen(
 @Composable
 private fun ApplyResultDialog(
     result: ApplyResult,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onReboot: () -> Unit = {}
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -448,8 +451,21 @@ private fun ApplyResultDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("OK")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (result.success) {
+                    TextButton(onClick = onReboot) {
+                        Icon(
+                            imageVector = Icons.Default.PowerSettingsNew,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Reboot")
+                    }
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("OK")
+                }
             }
         }
     )

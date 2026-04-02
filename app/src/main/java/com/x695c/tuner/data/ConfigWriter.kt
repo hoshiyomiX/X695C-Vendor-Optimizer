@@ -138,7 +138,7 @@ object ConfigWriter {
 
             if (exitCode == 0) {
                 // FLOW-W002: Verify written file is not empty
-                val (verifyExit, verifyOutput) = executeRootCommand("wc -c \"$filePath\" 2>/dev/null")
+                val (_, verifyOutput) = executeRootCommand("wc -c \"$filePath\" 2>/dev/null")
                 val fileSize = verifyOutput.trim().filter { it.isDigit() }.toIntOrNull() ?: 0
                 if (fileSize == 0) {
                     ActivityLogger.logError("ConfigWriter", "Write verification failed: file is empty after write for $configName")

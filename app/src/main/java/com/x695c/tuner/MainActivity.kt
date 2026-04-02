@@ -173,7 +173,6 @@ fun TunerApp(
                     onProfileChange = { viewModel.setProfile(it) },
                     gameConfigs = gameConfigs,
                     scenarioConfigs = scenarioConfigs,
-                    memoryConfig = memoryConfig,
                     gameConfigAvailable = gameConfigAvailable,
                     scenarioConfigAvailable = scenarioConfigAvailable,
                     memoryConfigAvailable = memoryConfigAvailable,

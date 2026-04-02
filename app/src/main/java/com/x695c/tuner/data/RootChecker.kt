@@ -3,63 +3,83 @@ package com.x695c.tuner.data
 import java.io.BufferedReader
 import java.io.DataOutputStream
 import java.io.InputStreamReader
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Root privilege checker and manager for X695C Vendor Tuner.
  * Handles root access detection and shell command execution.
+ *
+ * Thread-safe: uses AtomicBoolean/AtomicReference for cached state.
+ * Process stream consumption prevents deadlocks on all root operations.
  */
 object RootChecker {
 
-    // Root access status
-    private var rootAvailable: Boolean? = null
-    private var suBinaryPath: String? = null
+    // Thread-safe state with atomic references
+    private val rootAvailable = AtomicBoolean(false)
+    private val suBinaryPath = AtomicReference<String?>(null)
+    private val rootCheckAttempted = AtomicBoolean(false)
 
     /**
      * Check if root access is available on the device.
-     * Caches the result for subsequent calls.
+     * Caches result after first check. Call resetRootStatus() to re-check.
      */
     fun isRootAvailable(): Boolean {
-        if (rootAvailable != null) {
-            return rootAvailable!!
+        if (rootCheckAttempted.get()) {
+            return rootAvailable.get()
         }
-
-        rootAvailable = checkRootAccess()
-        ActivityLogger.log("RootChecker", "ROOT_CHECK", "Root access: ${if (rootAvailable == true) "AVAILABLE" else "NOT AVAILABLE"}")
-        return rootAvailable!!
+        val result = checkRootAccess()
+        rootAvailable.set(result)
+        rootCheckAttempted.set(true)
+        ActivityLogger.log("RootChecker", "ROOT_CHECK", "Root access: ${if (result) "AVAILABLE" else "NOT AVAILABLE"}")
+        return result
     }
 
     /**
      * Request root access and return the result.
-     * This will show a popup on rooted devices asking for permission.
+     * Always performs a fresh check regardless of cache.
+     * Also scans for su binary path for state tracking (FLOW-H006).
      */
     fun requestRootAccess(): Boolean {
-        if (rootAvailable == true) {
-            return true
-        }
-
+        // FLOW-H006: Scan for su binary path before attempting grant
+        scanForSuBinary()
         return try {
-            val process = Runtime.getRuntime().exec("su")
+            val processBuilder = ProcessBuilder("su")
+            val process = processBuilder.start()
             val outputStream = DataOutputStream(process.outputStream)
 
-            // Simple command to test root access
             outputStream.writeBytes("id\n")
-            outputStream.flush()
             outputStream.writeBytes("exit\n")
             outputStream.flush()
+            outputStream.close()
+
+            // Drain streams on background threads to prevent deadlock
+            val stdoutThread = Thread {
+                try { BufferedReader(InputStreamReader(process.inputStream)).readText() } catch (_: Exception) {}
+            }
+            val stderrThread = Thread {
+                try { BufferedReader(InputStreamReader(process.errorStream)).readText() } catch (_: Exception) {}
+            }
+            stdoutThread.start()
+            stderrThread.start()
+            stdoutThread.join(15000)
+            stderrThread.join(15000)
 
             val exitCode = process.waitFor()
-            rootAvailable = exitCode == 0
+            val granted = exitCode == 0
+            rootAvailable.set(granted)
+            rootCheckAttempted.set(true)
 
-            if (rootAvailable == true) {
+            if (granted) {
                 ActivityLogger.log("RootChecker", "ROOT_GRANTED", "Root access granted by user")
             } else {
                 ActivityLogger.log("RootChecker", "ROOT_DENIED", "Root access denied or not available")
             }
-
-            rootAvailable!!
+            granted
         } catch (e: Exception) {
             ActivityLogger.logError("RootChecker", "Failed to request root: ${e.message}")
-            rootAvailable = false
+            rootAvailable.set(false)
+            rootCheckAttempted.set(true)
             false
         }
     }
@@ -73,22 +93,30 @@ object RootChecker {
             ActivityLogger.logError("RootChecker", "Root not available for command execution")
             return null
         }
-
         return try {
-            val process = Runtime.getRuntime().exec("su")
+            val processBuilder = ProcessBuilder("su")
+            val process = processBuilder.start()
             val outputStream = DataOutputStream(process.outputStream)
-            val inputStream = BufferedReader(InputStreamReader(process.inputStream))
 
             outputStream.writeBytes("$command\n")
-            outputStream.flush()
             outputStream.writeBytes("exit\n")
             outputStream.flush()
+            outputStream.close()
+
+            // Drain stderr on background thread
+            val stderrThread = Thread {
+                try { BufferedReader(InputStreamReader(process.errorStream)).readText() } catch (_: Exception) {}
+            }
+            stderrThread.start()
 
             val output = StringBuilder()
+            val reader = BufferedReader(InputStreamReader(process.inputStream))
             var line: String?
-            while (inputStream.readLine().also { line = it } != null) {
+            while (reader.readLine().also { line = it } != null) {
                 output.appendLine(line)
             }
+            reader.close()
+            stderrThread.join(15000)
 
             val exitCode = process.waitFor()
             if (exitCode == 0) {
@@ -106,59 +134,68 @@ object RootChecker {
 
     /**
      * Check for common root binaries and indicators.
+     * Does NOT return true just because su binary exists;
+     * always verifies actual execution to confirm user granted permission.
+     * Drains process streams to prevent deadlock.
      */
     private fun checkRootAccess(): Boolean {
-        // Check for su binary in common locations
-        val suPaths = listOf(
-            "/system/bin/su",
-            "/system/xbin/su",
-            "/sbin/su",
-            "/system/su",
-            "/vendor/bin/su",
-            "/su/bin/su",
-            "/data/local/xbin/su",
-            "/data/local/bin/su",
-            "/magisk/.core/bin/su"
-        )
+        // FLOW-H006: Scan for su binary first (extracted to reusable method)
+        scanForSuBinary()
 
-        for (path in suPaths) {
-            try {
-                val file = java.io.File(path)
-                if (file.exists() && file.canExecute()) {
-                    suBinaryPath = path
-                    return true
-                }
-            } catch (e: Exception) {
-                // Ignore permission errors
-            }
-        }
-
-        // Try to execute su directly
+        // Actually execute su and verify it works (user has granted permission)
         return try {
-            val process = Runtime.getRuntime().exec("su")
-            val exitCode = process.waitFor()
-            exitCode == 0
-        } catch (e: Exception) {
+            val process = ProcessBuilder("su").start()
+            val stderrThread = Thread {
+                try { BufferedReader(InputStreamReader(process.errorStream)).readText() } catch (_: Exception) {}
+            }
+            val stdoutThread = Thread {
+                try { BufferedReader(InputStreamReader(process.inputStream)).readText() } catch (_: Exception) {}
+            }
+            stdoutThread.start()
+            stderrThread.start()
+            process.outputStream.close()
+            stdoutThread.join(10000)
+            stderrThread.join(10000)
+            process.waitFor() == 0
+        } catch (_: Exception) {
             false
         }
     }
 
     /**
-     * Get the path to the su binary if found.
+     * Scan filesystem for su binary. Sets suBinaryPath if found.
+     * FLOW-H006: Extracted from checkRootAccess() for reuse in requestRootAccess().
      */
-    fun getSuBinaryPath(): String? = suBinaryPath
-
-    /**
-     * Reset the cached root status (for re-checking).
-     */
-    fun resetRootStatus() {
-        rootAvailable = null
-        suBinaryPath = null
+    private fun scanForSuBinary() {
+        val suPaths = listOf(
+            "/system/bin/su", "/system/xbin/su", "/sbin/su", "/system/su",
+            "/vendor/bin/su", "/su/bin/su", "/data/local/xbin/su",
+            "/data/local/bin/su", "/magisk/.core/bin/su"
+        )
+        for (path in suPaths) {
+            try {
+                val file = java.io.File(path)
+                if (file.exists() && file.canExecute()) {
+                    suBinaryPath.set(path)
+                    break  // Found su binary, stop scanning
+                }
+            } catch (_: Exception) {}
+        }
     }
 
+    fun getSuBinaryPath(): String? = suBinaryPath.get()
+
     /**
-     * Check if the app has been granted root access already.
-     * Returns null if not checked yet.
+     * Reset cached root status to allow re-checking.
+     * Should be called when user grants root after initial denial.
      */
-    fun getRootStatus(): Boolean? = rootAvailable
+    fun resetRootStatus() {
+        rootAvailable.set(false)
+        suBinaryPath.set(null)
+        rootCheckAttempted.set(false)
+        ActivityLogger.log("RootChecker", "RESET", "Root status cache cleared")
+    }
+
+    /** Whether the su binary was detected on the filesystem (may not have user grant yet). */
+    fun isSuBinaryDetected(): Boolean = rootCheckAttempted.get() && suBinaryPath.get() != null
 }

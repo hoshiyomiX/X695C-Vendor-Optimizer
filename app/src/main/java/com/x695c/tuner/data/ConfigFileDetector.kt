@@ -1,21 +1,19 @@
 package com.x695c.tuner.data
 
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Detects and reads vendor configuration files from the device.
- * Requires root access for actual file reading on production devices.
  * All paths are obfuscated in logs for security.
+ * Uses ConcurrentHashMap for thread-safe state management.
  */
 object ConfigFileDetector {
 
-    // Config file paths (private - never exposed in logs)
-    private val gameConfigPaths = listOf("/vendor/etc/power_app_cfg.xml")
-    
-    private val scenarioConfigPaths = listOf("/vendor/etc/powerscntbl.xml")
-    
-    private val memoryConfigPaths = listOf("/vendor/etc/performance/policy_config_6g_ram.json")
-    
+    private val gameConfigPaths = VendorPaths.gameConfigPaths
+    private val scenarioConfigPaths = VendorPaths.scenarioConfigPaths
+    private val memoryConfigPaths = VendorPaths.memoryConfigPaths
+
     enum class ConfigType {
         GAME_WHITELIST,
         PERFORMANCE_SCENARIOS,
@@ -27,84 +25,53 @@ object ConfigFileDetector {
         val available: Boolean,
         val readable: Boolean
     ) {
-        // Never expose the actual path in toString or any public output
-        override fun toString(): String {
-            return "ConfigStatus(type=$type, available=$available, readable=$readable)"
-        }
+        override fun toString(): String = "ConfigStatus(type=$type, available=$available, readable=$readable)"
     }
 
-    private val detectedConfigs = mutableMapOf<ConfigType, ConfigStatus>()
+    // Thread-safe storage
+    private val detectedConfigs = ConcurrentHashMap<ConfigType, ConfigStatus>()
 
-    /**
-     * Check if configuration files exist on the device.
-     * Should be called during app initialization.
-     */
     fun detectConfigs(): Map<ConfigType, ConfigStatus> {
         detectConfig(ConfigType.GAME_WHITELIST, gameConfigPaths)
         detectConfig(ConfigType.PERFORMANCE_SCENARIOS, scenarioConfigPaths)
         detectConfig(ConfigType.MEMORY_MANAGEMENT, memoryConfigPaths)
-        
         return detectedConfigs.toMap()
     }
 
     private fun detectConfig(type: ConfigType, paths: List<String>) {
         var detected = false
         var readable = false
-
         for (path in paths) {
             val file = File(path)
             if (file.exists()) {
                 detected = true
                 readable = file.canRead()
-                
-                // Use obfuscated logging - never expose actual path
                 ActivityLogger.logFileDetection(path, true)
-
-                if (readable) {
-                    break
-                }
+                if (readable) break
             } else {
                 ActivityLogger.logFileDetection(path, false)
             }
         }
-
-        val status = ConfigStatus(type, detected, readable)
-        detectedConfigs[type] = status
+        detectedConfigs[type] = ConfigStatus(type, detected, readable)
     }
 
-    /**
-     * Get the status of a specific config type.
-     */
-    fun getConfigStatus(type: ConfigType): ConfigStatus {
-        return detectedConfigs[type] ?: ConfigStatus(type, false, false)
-    }
+    fun getConfigStatus(type: ConfigType): ConfigStatus =
+        detectedConfigs[type] ?: ConfigStatus(type, false, false)
 
-    /**
-     * Check if a config type is available and readable.
-     */
-    fun isConfigAvailable(type: ConfigType): Boolean {
-        return detectedConfigs[type]?.available ?: false
-    }
+    fun isConfigAvailable(type: ConfigType): Boolean =
+        detectedConfigs[type]?.available ?: false
 
-    /**
-     * Check if a config type is readable (file exists and can be read).
-     */
     fun isConfigReadable(type: ConfigType): Boolean {
         val status = detectedConfigs[type]
         return status?.available == true && status.readable
     }
 
-    /**
-     * Read the content of a config file if available and readable.
-     * Returns null if file is not available or not readable.
-     */
     fun readConfigFile(type: ConfigType): String? {
         val paths = when (type) {
             ConfigType.GAME_WHITELIST -> gameConfigPaths
             ConfigType.PERFORMANCE_SCENARIOS -> scenarioConfigPaths
             ConfigType.MEMORY_MANAGEMENT -> memoryConfigPaths
         }
-
         for (path in paths) {
             val file = File(path)
             if (file.exists() && file.canRead()) {
@@ -119,14 +86,9 @@ object ConfigFileDetector {
         return null
     }
 
-    /**
-     * Get a summary of all config file statuses.
-     * Does NOT expose actual file paths.
-     */
     fun getStatusSummary(): String {
         val sb = StringBuilder()
         sb.appendLine("=== Config File Detection Status ===")
-
         detectedConfigs.forEach { (type, status) ->
             val statusText = when {
                 !status.available -> "NOT FOUND"
@@ -135,7 +97,6 @@ object ConfigFileDetector {
             }
             sb.appendLine("${type.name}: $statusText")
         }
-
         return sb.toString()
     }
 }

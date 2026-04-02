@@ -34,7 +34,7 @@ fun MainDashboardScreen(
     onNavigateToScenarios: () -> Unit,
     onNavigateToMemory: () -> Unit,
     onCopyLogs: () -> Unit,
-    onRequestRoot: () -> Unit,
+    onRequestRoot: () -> Unit = {},
     onApplyConfiguration: () -> Unit,
     onDismissApplyResult: () -> Unit,
     modifier: Modifier = Modifier
@@ -402,16 +402,33 @@ private fun ApplyResultDialog(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 
-                ResultRow("Game Config", result.gameConfigWritten)
-                ResultRow("Scenario Config", result.scenarioConfigWritten)
-                ResultRow("Memory Config", result.memoryConfigWritten)
+                ResultRow("Game Config", result.gameConfigWritten, result.gameConfigSkipped)
+                ResultRow("Scenario Config", result.scenarioConfigWritten, result.scenarioConfigSkipped)
+                ResultRow("Memory Config", result.memoryConfigWritten, result.memoryConfigSkipped)
                 
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "${result.successCount}/${result.totalConfigs} configs written successfully",
+                    text = "${result.successCount} written, ${result.skippedCount} skipped / ${result.totalConfigs} total",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                
+                if (result.skippedMessages.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Skipped:",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    result.skippedMessages.forEach { msg ->
+                        Text(
+                            text = "• $msg",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
                 
                 if (result.errorMessages.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(8.dp))
@@ -440,22 +457,60 @@ private fun ApplyResultDialog(
 }
 
 @Composable
-private fun ResultRow(name: String, success: Boolean) {
+private fun ResultRow(name: String, written: Boolean, skipped: Boolean = false) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.padding(vertical = 2.dp)
     ) {
-        Icon(
-            imageVector = if (success) Icons.Default.Check else Icons.Default.Close,
-            contentDescription = null,
-            tint = if (success) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-            modifier = Modifier.size(16.dp)
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(
-            text = name,
-            style = MaterialTheme.typography.bodyMedium
-        )
+        when {
+            skipped -> {
+                Icon(
+                    imageVector = Icons.Default.RemoveCircleOutline,
+                    contentDescription = "Skipped",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "(skipped)",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            written -> {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = "Written",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            else -> {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Failed",
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
     }
 }
 
@@ -465,6 +520,22 @@ private fun RootStatusIndicator(
     onRequestRoot: () -> Unit
 ) {
     when {
+        rootState.isRequesting -> {
+            // FLOW-H006: Show loading spinner while root grant is in progress
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "Root",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+            }
+        }
         rootState.isGranted -> {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
@@ -482,10 +553,12 @@ private fun RootStatusIndicator(
             }
         }
         rootState.isAvailable && !rootState.isGranted -> {
+            // FLOW-H006: This state is now reachable — su binary detected but root not yet granted.
+            // The shield button triggers the su grant prompt.
             IconButton(onClick = onRequestRoot) {
                 Icon(
                     imageVector = Icons.Default.Security,
-                    contentDescription = "Request Root",
+                    contentDescription = "Grant Root Access",
                     tint = MaterialTheme.colorScheme.tertiary,
                     modifier = Modifier.size(24.dp)
                 )

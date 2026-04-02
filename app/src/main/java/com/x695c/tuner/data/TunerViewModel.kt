@@ -2,11 +2,13 @@ package com.x695c.tuner.data
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class TunerViewModel : ViewModel() {
 
@@ -16,14 +18,15 @@ class TunerViewModel : ViewModel() {
     private val _selectedProfile = MutableStateFlow(TuningProfile.DEFAULT)
     val selectedProfile: StateFlow<TuningProfile> = _selectedProfile.asStateFlow()
 
-    private val _gameConfigs = MutableStateFlow(getDefaultGameConfigs())
+    // All configs start EMPTY — loaded directly from device files, no hardcoded defaults.
+    private val _gameConfigs = MutableStateFlow<Map<String, GameTuningConfig>>(emptyMap())
     val gameConfigs: StateFlow<Map<String, GameTuningConfig>> = _gameConfigs.asStateFlow()
 
-    private val _scenarioConfigs = MutableStateFlow(getDefaultScenarioConfigs())
+    private val _scenarioConfigs = MutableStateFlow<Map<String, PerformanceScenarioConfig>>(emptyMap())
     val scenarioConfigs: StateFlow<Map<String, PerformanceScenarioConfig>> = _scenarioConfigs.asStateFlow()
 
-    private val _memoryConfig = MutableStateFlow(MemoryManagementConfig())
-    val memoryConfig: StateFlow<MemoryManagementConfig> = _memoryConfig.asStateFlow()
+    private val _memoryConfig = MutableStateFlow<MemoryManagementConfig?>(null)
+    val memoryConfig: StateFlow<MemoryManagementConfig?> = _memoryConfig.asStateFlow()
 
     // Config file availability status
     private val _configAvailability = MutableStateFlow<Map<ConfigFileDetector.ConfigType, ConfigFileDetector.ConfigStatus>>(emptyMap())
@@ -42,58 +45,48 @@ class TunerViewModel : ViewModel() {
     val applyState: StateFlow<ApplyState> = _applyState.asStateFlow()
 
     init {
-        // Log app start
         ActivityLogger.log("App", "INIT", "X695C Vendor Tuner started")
-
-        // Check root availability (non-blocking)
         checkRootAvailability()
-
-        // Detect and parse config files
         detectAndLoadConfigs()
     }
 
     // ==================== ROOT ACCESS METHODS ====================
 
-    /**
-     * Check if root is available on the device.
-     */
     private fun checkRootAvailability() {
         viewModelScope.launch {
-            val isAvailable = RootChecker.isRootAvailable()
+            // FLOW-H006: Separate su binary detection from root grant check.
+            // isRootAvailable() executes `su` and checks exit code (requires user grant).
+            // isSuBinaryDetected() only checks filesystem (no grant required).
+            val isGranted = RootChecker.isRootAvailable()
+            val suDetected = RootChecker.isSuBinaryDetected()
             _rootState.value = RootState(
-                isAvailable = isAvailable,
+                isAvailable = suDetected || isGranted,
                 hasBeenRequested = false,
-                isGranted = isAvailable
+                isGranted = isGranted
             )
-
-            if (isAvailable) {
-                ActivityLogger.log("Root", "DETECTED", "Root access detected on device")
+            if (isGranted) {
+                ActivityLogger.log("Root", "GRANTED", "Root access detected and granted on device")
+            } else if (suDetected) {
+                ActivityLogger.log("Root", "SU_DETECTED", "su binary found but root not yet granted")
             } else {
-                ActivityLogger.log("Root", "NOT_DETECTED", "No root access detected")
+                ActivityLogger.log("Root", "NOT_DETECTED", "No root access or su binary detected")
             }
         }
     }
 
-    /**
-     * Request root access from the user.
-     * This will show a popup on rooted devices.
-     */
     fun requestRootAccess() {
         viewModelScope.launch {
             _rootState.value = _rootState.value.copy(isRequesting = true)
-
             val granted = RootChecker.requestRootAccess()
-
+            val suDetected = RootChecker.isSuBinaryDetected()
             _rootState.value = RootState(
-                isAvailable = granted,
+                isAvailable = suDetected || granted,
                 hasBeenRequested = true,
                 isGranted = granted,
                 isRequesting = false
             )
-
             if (granted) {
                 ActivityLogger.log("Root", "GRANTED", "Root access granted by user")
-                // Initialize config change baseline after getting root
                 initializeConfigChangeBaseline()
             } else {
                 ActivityLogger.log("Root", "DENIED", "Root access denied by user or not available")
@@ -101,9 +94,6 @@ class TunerViewModel : ViewModel() {
         }
     }
 
-    /**
-     * Dismiss the root request dialog without granting.
-     */
     fun dismissRootRequest() {
         _rootState.value = _rootState.value.copy(
             hasBeenRequested = true,
@@ -112,9 +102,6 @@ class TunerViewModel : ViewModel() {
         ActivityLogger.log("Root", "DISMISSED", "Root request dialog dismissed")
     }
 
-    /**
-     * Check if root should be requested.
-     */
     fun shouldRequestRoot(): Boolean {
         val state = _rootState.value
         return !state.isAvailable && !state.hasBeenRequested && !state.isRequesting
@@ -122,9 +109,6 @@ class TunerViewModel : ViewModel() {
 
     // ==================== CONFIG CHANGE TRACKING METHODS ====================
 
-    /**
-     * Initialize config change detection baseline.
-     */
     private fun initializeConfigChangeBaseline() {
         viewModelScope.launch {
             ConfigChangeTracker.initializeBaseline()
@@ -132,90 +116,83 @@ class TunerViewModel : ViewModel() {
         }
     }
 
-    /**
-     * Check all config files for external changes.
-     */
     fun checkConfigChanges() {
         viewModelScope.launch {
             val changes = ConfigChangeTracker.checkAllForChanges()
             val statuses = ConfigChangeTracker.getAllChangeStatuses()
             _configChangeStatus.value = statuses
-
-            // Log any detected changes
             changes.values.filter { it.isExternal }.forEach { result ->
                 ActivityLogger.log("ConfigChange", "EXTERNAL_MODIFICATION", "${result.obfuscatedPath} was modified externally")
             }
         }
     }
 
-    /**
-     * Get formatted logs for copying.
-     */
-    fun getFormattedLogs(): String {
-        return ActivityLogger.getFormattedLogs()
-    }
+    fun getFormattedLogs(): String = ActivityLogger.getFormattedLogs()
 
-    /**
-     * Check if any config has external changes.
-     */
-    fun hasExternalConfigChanges(): Boolean {
-        return ConfigChangeTracker.hasAnyExternalChanges()
-    }
+    fun hasExternalConfigChanges(): Boolean = ConfigChangeTracker.hasAnyExternalChanges()
 
-    /**
-     * Save current config states as known baseline.
-     * Call this after applying config changes from the APK.
-     */
     fun saveCurrentConfigStatesAsKnown() {
         ConfigChangeTracker.saveAllCurrentStatesAsKnown()
         checkConfigChanges()
     }
 
+    // ==================== CONFIG LOADING (FROM DEVICE ONLY) ====================
+
+    /**
+     * Detects and loads all configuration files directly from the device.
+     * No hardcoded defaults — all data comes from the vendor partition.
+     */
     private fun detectAndLoadConfigs() {
         viewModelScope.launch {
             ActivityLogger.log("FileDetection", "START", "Scanning for config files...")
-            
+            _uiState.value = _uiState.value.copy(isLoading = true)
+
             // Detect config files
             val configs = ConfigFileDetector.detectConfigs()
             _configAvailability.value = configs
-
-            // Log summary
             ActivityLogger.log("FileDetection", "COMPLETE", ConfigFileDetector.getStatusSummary())
 
-            // Parse configs from device files
+            // Parse configs from device files directly (no hardcoded fallback)
             loadConfigsFromDevice()
         }
     }
 
-    private fun loadConfigsFromDevice() {
-        viewModelScope.launch {
-            // Try to parse game configs
-            val parsedGameConfigs = ConfigFileParser.parseGameConfigs()
-            if (parsedGameConfigs.isNotEmpty()) {
-                // Merge with defaults (parsed configs take precedence)
-                val mergedConfigs = getDefaultGameConfigs().toMutableMap()
-                mergedConfigs.putAll(parsedGameConfigs)
-                _gameConfigs.value = mergedConfigs
-                ActivityLogger.log("ConfigParser", "GAME_CONFIGS_LOADED", "Loaded ${parsedGameConfigs.size} game configs from device")
-            }
-
-            // Try to parse scenario configs
-            val parsedScenarioConfigs = ConfigFileParser.parseScenarioConfigs()
-            if (parsedScenarioConfigs.isNotEmpty()) {
-                val mergedConfigs = getDefaultScenarioConfigs().toMutableMap()
-                mergedConfigs.putAll(parsedScenarioConfigs)
-                _scenarioConfigs.value = mergedConfigs
-                ActivityLogger.log("ConfigParser", "SCENARIO_CONFIGS_LOADED", "Loaded ${parsedScenarioConfigs.size} scenario configs from device")
-            }
-
-            // Try to parse memory config
-            val parsedMemoryConfig = ConfigFileParser.parseMemoryConfig()
-            if (parsedMemoryConfig != null) {
-                _memoryConfig.value = parsedMemoryConfig
-                ActivityLogger.log("ConfigParser", "MEMORY_CONFIG_LOADED", "Loaded memory config from device")
-            }
-
+    /**
+     * Loads configuration directly from device vendor files.
+     * If device has no config files, maps remain empty — user can add custom entries.
+     */
+    private suspend fun loadConfigsFromDevice() {
+        // All parsing runs on IO dispatcher to avoid blocking the main thread
+        val parsedGameConfigs = withContext(Dispatchers.IO) {
+            ConfigFileParser.parseGameConfigs()
         }
+        if (parsedGameConfigs.isNotEmpty()) {
+            _gameConfigs.value = parsedGameConfigs
+            ActivityLogger.log("ConfigParser", "GAME_CONFIGS_LOADED", "Loaded ${parsedGameConfigs.size} game configs from device")
+        } else {
+            ActivityLogger.log("ConfigParser", "GAME_CONFIGS_EMPTY", "No game configs found on device")
+        }
+
+        val parsedScenarioConfigs = withContext(Dispatchers.IO) {
+            ConfigFileParser.parseScenarioConfigs()
+        }
+        if (parsedScenarioConfigs.isNotEmpty()) {
+            _scenarioConfigs.value = parsedScenarioConfigs
+            ActivityLogger.log("ConfigParser", "SCENARIO_CONFIGS_LOADED", "Loaded ${parsedScenarioConfigs.size} scenario configs from device")
+        } else {
+            ActivityLogger.log("ConfigParser", "SCENARIO_CONFIGS_EMPTY", "No scenario configs found on device")
+        }
+
+        val parsedMemoryConfig = withContext(Dispatchers.IO) {
+            ConfigFileParser.parseMemoryConfig()
+        }
+        if (parsedMemoryConfig != null) {
+            _memoryConfig.value = parsedMemoryConfig
+            ActivityLogger.log("ConfigParser", "MEMORY_CONFIG_LOADED", "Loaded memory config from device")
+        } else {
+            ActivityLogger.log("ConfigParser", "MEMORY_CONFIG_EMPTY", "No memory config found on device")
+        }
+        _uiState.value = _uiState.value.copy(isLoading = false)
     }
 
     fun isConfigAvailable(type: ConfigFileDetector.ConfigType): Boolean {
@@ -227,159 +204,126 @@ class TunerViewModel : ViewModel() {
         return status?.available == true && status.readable
     }
 
+    // ==================== PROFILE MANAGEMENT ====================
+
     fun setProfile(profile: TuningProfile) {
         val oldProfile = _selectedProfile.value
         _selectedProfile.value = profile
         ActivityLogger.logProfileChange(oldProfile.name, profile.name)
 
         when (profile) {
-            TuningProfile.DEFAULT -> loadDefaultProfile()
-            TuningProfile.POWER_SAVING -> loadPowerSavingProfile()
-            TuningProfile.BALANCED -> loadBalancedProfile()
-            TuningProfile.PERFORMANCE -> loadPerformanceProfile()
-            TuningProfile.GAMING -> loadGamingProfile()
+            TuningProfile.DEFAULT -> requestDefaultProfileReset()
+            TuningProfile.POWER_SAVING -> applyPowerSavingMemoryOverrides()
+            TuningProfile.BALANCED -> applyBalancedMemoryOverrides()
+            TuningProfile.PERFORMANCE -> applyPerformanceMemoryOverrides()
+            TuningProfile.GAMING -> applyGamingMemoryOverrides()
             TuningProfile.CUSTOM -> { /* Keep current settings */ }
         }
-
-        // Mark as having unsaved changes (require apply to write)
         _uiState.value = _uiState.value.copy(hasUnsavedChanges = true)
     }
 
-    private fun loadDefaultProfile() {
-        ActivityLogger.log("Profile", "LOAD_DEFAULT", "Loading default profile settings")
-        _gameConfigs.value = getDefaultGameConfigs()
-        _scenarioConfigs.value = getDefaultScenarioConfigs()
-        _memoryConfig.value = MemoryManagementConfig()
+    /**
+     * Reset to default: re-read all configs from device.
+     * FLOW-L005 fix: Sets needsConfirmationReset flag instead of directly resetting.
+     */
+    fun requestDefaultProfileReset() {
+        _uiState.value = _uiState.value.copy(needsConfirmationReset = true)
+        ActivityLogger.log("Profile", "REQUEST_DEFAULT_RESET", "User requested default profile reset (confirmation pending)")
     }
 
-    private fun loadPowerSavingProfile() {
-        ActivityLogger.log("Profile", "LOAD_POWER_SAVING", "Loading power saving profile settings")
-        _memoryConfig.value = MemoryManagementConfig(
+    /** Confirms the default profile reset after user confirmation. FLOW-L005 fix. */
+    fun confirmDefaultReset() {
+        ActivityLogger.log("Profile", "CONFIRM_DEFAULT_RESET", "User confirmed default profile reset")
+        _uiState.value = _uiState.value.copy(needsConfirmationReset = false, hasUnsavedChanges = false)
+        viewModelScope.launch { loadConfigsFromDevice() }
+    }
+
+    /** Cancels the default profile reset. FLOW-L005 fix. */
+    fun cancelDefaultReset() {
+        _uiState.value = _uiState.value.copy(needsConfirmationReset = false)
+        ActivityLogger.log("Profile", "CANCEL_DEFAULT_RESET", "User cancelled default profile reset")
+    }
+
+    private fun applyPowerSavingMemoryOverrides() {
+        ActivityLogger.log("Profile", "LOAD_POWER_SAVING", "Applying power saving memory overrides")
+        val current = _memoryConfig.value ?: return
+        _memoryConfig.value = current.copy(
             features = MemoryFeatureConfig(
-                appStartLimit = true,
-                oomAdjClean = true,
-                lowRamClean = true,
-                lowSwapClean = true,
-                oneKeyClean = true,
-                heavyCpuClean = true,
-                heavyIowClean = true,
-                sleepClean = true,
-                fixAdj = true,
-                limit3rdStart = true,
-                allowClean3rd = true
+                appStartLimit = true, oomAdjClean = true, lowRamClean = true,
+                lowSwapClean = true, oneKeyClean = true, heavyCpuClean = true,
+                heavyIowClean = true, sleepClean = true, fixAdj = true,
+                limit3rdStart = true, allowClean3rd = true
             )
         )
     }
 
-    private fun loadBalancedProfile() {
-        ActivityLogger.log("Profile", "LOAD_BALANCED", "Loading balanced profile settings")
-        _memoryConfig.value = MemoryManagementConfig(
+    private fun applyBalancedMemoryOverrides() {
+        ActivityLogger.log("Profile", "LOAD_BALANCED", "Applying balanced memory overrides")
+        val current = _memoryConfig.value ?: return
+        _memoryConfig.value = current.copy(
             features = MemoryFeatureConfig(
-                appStartLimit = true,
-                oomAdjClean = true,
-                lowRamClean = true,
-                lowSwapClean = true,
-                oneKeyClean = true,
-                heavyCpuClean = false,
-                heavyIowClean = false,
-                sleepClean = true,
-                fixAdj = true,
-                limit3rdStart = true,
-                allowClean3rd = true
+                appStartLimit = true, oomAdjClean = true, lowRamClean = true,
+                lowSwapClean = true, oneKeyClean = true, heavyCpuClean = false,
+                heavyIowClean = false, sleepClean = true, fixAdj = true,
+                limit3rdStart = true, allowClean3rd = true
             )
         )
     }
 
-    private fun loadPerformanceProfile() {
-        ActivityLogger.log("Profile", "LOAD_PERFORMANCE", "Loading performance profile settings")
-        _memoryConfig.value = MemoryManagementConfig(
+    private fun applyPerformanceMemoryOverrides() {
+        ActivityLogger.log("Profile", "LOAD_PERFORMANCE", "Applying performance memory overrides")
+        val current = _memoryConfig.value ?: return
+        _memoryConfig.value = current.copy(
             features = MemoryFeatureConfig(
-                appStartLimit = false,
-                oomAdjClean = true,
-                lowRamClean = true,
-                lowSwapClean = false,
-                oneKeyClean = false,
-                heavyCpuClean = false,
-                heavyIowClean = false,
-                sleepClean = false,
-                fixAdj = true,
-                limit3rdStart = false,
-                allowClean3rd = false
+                appStartLimit = false, oomAdjClean = true, lowRamClean = true,
+                lowSwapClean = false, oneKeyClean = false, heavyCpuClean = false,
+                heavyIowClean = false, sleepClean = false, fixAdj = true,
+                limit3rdStart = false, allowClean3rd = false
             ),
-            thresholds = MemoryThresholdConfig(
-                adjCached = 500,
-                freeCached = 900
-            )
+            thresholds = MemoryThresholdConfig(adjCached = 500, freeCached = 900)
         )
     }
 
-    private fun loadGamingProfile() {
-        ActivityLogger.log("Profile", "LOAD_GAMING", "Loading gaming profile settings")
-        _memoryConfig.value = MemoryManagementConfig(
+    private fun applyGamingMemoryOverrides() {
+        ActivityLogger.log("Profile", "LOAD_GAMING", "Applying gaming memory overrides")
+        val current = _memoryConfig.value ?: return
+        _memoryConfig.value = current.copy(
             features = MemoryFeatureConfig(
-                appStartLimit = false,
-                oomAdjClean = true,
-                lowRamClean = false,
-                lowSwapClean = false,
-                oneKeyClean = false,
-                heavyCpuClean = false,
-                heavyIowClean = false,
-                sleepClean = false,
-                fixAdj = true,
-                limit3rdStart = false,
-                allowClean3rd = false
+                appStartLimit = false, oomAdjClean = true, lowRamClean = false,
+                lowSwapClean = false, oneKeyClean = false, heavyCpuClean = false,
+                heavyIowClean = false, sleepClean = false, fixAdj = true,
+                limit3rdStart = false, allowClean3rd = false
             ),
-            thresholds = MemoryThresholdConfig(
-                adjCached = 400,
-                freeCached = 1000
-            ),
+            thresholds = MemoryThresholdConfig(adjCached = 400, freeCached = 1000),
             processLimits = ProcessMemoryConfig(
-                thirdParty = 150,
-                gms = 150,
-                system = 150,
-                systemBg = 150,
-                game = 400
+                thirdParty = 150, gms = 150, system = 150, systemBg = 150, game = 400
             )
         )
     }
+
+    // ==================== CONFIG UPDATE METHODS ====================
 
     fun updateGameConfig(packageName: String, config: GameTuningConfig) {
         val oldConfig = _gameConfigs.value[packageName]
         _gameConfigs.update { configs ->
-            configs.toMutableMap().apply {
-                this[packageName] = config
-            }
+            configs.toMutableMap().apply { this[packageName] = config }
         }
         _selectedProfile.value = TuningProfile.CUSTOM
         _uiState.value = _uiState.value.copy(hasUnsavedChanges = true)
-
         if (oldConfig != null) {
-            ActivityLogger.logConfigChange(
-                "GameTuning",
-                "Game[$packageName]",
-                oldConfig.toString(),
-                config.toString()
-            )
+            ActivityLogger.logConfigChange("GameTuning", "Game[$packageName]", oldConfig.toString(), config.toString())
         }
     }
 
     fun updateScenarioConfig(scenarioName: String, config: PerformanceScenarioConfig) {
         val oldConfig = _scenarioConfigs.value[scenarioName]
         _scenarioConfigs.update { configs ->
-            configs.toMutableMap().apply {
-                this[scenarioName] = config
-            }
+            configs.toMutableMap().apply { this[scenarioName] = config }
         }
         _selectedProfile.value = TuningProfile.CUSTOM
         _uiState.value = _uiState.value.copy(hasUnsavedChanges = true)
-
         if (oldConfig != null) {
-            ActivityLogger.logConfigChange(
-                "PerformanceScenario",
-                "Scenario[$scenarioName]",
-                oldConfig.toString(),
-                config.toString()
-            )
+            ActivityLogger.logConfigChange("PerformanceScenario", "Scenario[$scenarioName]", oldConfig.toString(), config.toString())
         }
     }
 
@@ -388,65 +332,70 @@ class TunerViewModel : ViewModel() {
         _memoryConfig.value = config
         _selectedProfile.value = TuningProfile.CUSTOM
         _uiState.value = _uiState.value.copy(hasUnsavedChanges = true)
-
-        ActivityLogger.logConfigChange(
-            "MemoryManagement",
-            "MemoryConfig",
-            oldConfig.toString(),
-            config.toString()
-        )
+        ActivityLogger.logConfigChange("MemoryManagement", "MemoryConfig", oldConfig?.toString() ?: "null", config.toString())
     }
 
     /**
      * Add a custom game by package name.
-     * Creates a default config for the new game.
+     * Validates format before accepting. Creates a default config for the new game.
      */
     fun addCustomGame(packageName: String) {
-        if (packageName.isBlank() || _gameConfigs.value.containsKey(packageName)) {
+        val trimmed = packageName.trim()
+        if (trimmed.isBlank() || _gameConfigs.value.containsKey(trimmed)) {
             return
         }
-
-        val newConfig = GameTuningConfig(packageName = packageName)
+        if (!isValidPackageName(trimmed)) {
+            ActivityLogger.logError("GameTuning", "Invalid package name format: $trimmed")
+            return
+        }
+        val newConfig = GameTuningConfig(packageName = trimmed)
         _gameConfigs.update { configs ->
-            configs.toMutableMap().apply {
-                this[packageName] = newConfig
-            }
+            configs.toMutableMap().apply { this[trimmed] = newConfig }
         }
         _selectedProfile.value = TuningProfile.CUSTOM
         _uiState.value = _uiState.value.copy(hasUnsavedChanges = true)
-        
-        ActivityLogger.log("GameTuning", "ADD_GAME", "Added custom game: $packageName")
+        ActivityLogger.log("GameTuning", "ADD_GAME", "Added custom game: $trimmed")
+    }
+
+    /**
+     * Remove a game configuration by package name.
+     * FLOW-M002 fix: Users can now delete custom games they added.
+     */
+    fun removeGame(packageName: String) {
+        if (!_gameConfigs.value.containsKey(packageName)) return
+        _gameConfigs.update { configs ->
+            configs.toMutableMap().apply { this.remove(packageName) }
+        }
+        _selectedProfile.value = TuningProfile.CUSTOM
+        _uiState.value = _uiState.value.copy(hasUnsavedChanges = true)
+        ActivityLogger.log("GameTuning", "REMOVE_GAME", "Removed game: $packageName")
+    }
+
+    /**
+     * Reload all configurations from device vendor files.
+     * FLOW-M003 fix: Users can reload after detecting external changes.
+     */
+    fun reloadFromDevice() {
+        ActivityLogger.log("Profile", "RELOAD", "Reloading all configs from device")
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true)
+            loadConfigsFromDevice()
+            _uiState.value = _uiState.value.copy(isLoading = false)
+        }
     }
 
     // ==================== CONFIGURATION APPLY METHODS ====================
 
-    /**
-     * Check if root is available and granted.
-     * Returns true if the app can write to system files.
-     */
     fun canWriteConfigs(): Boolean {
         return _rootState.value.isGranted || RootChecker.isRootAvailable()
     }
 
-    /**
-     * Apply all current configurations to the system.
-     * REQUIRES ROOT ACCESS!
-     * 
-     * This will write to:
-     * - /vendor/etc/power_app_cfg.xml (game configs)
-     * - /vendor/etc/powerscntbl.xml (scenario configs)
-     * - /vendor/etc/performance/policy_config_6g_ram.json (memory config)
-     */
     fun applyConfiguration() {
-        // Check root access first
         if (!canWriteConfigs()) {
             ActivityLogger.logError("ConfigApply", "Cannot apply: Root access required")
             _applyState.value = ApplyState(
                 isApplying = false,
-                lastResult = ApplyResult(
-                    success = false,
-                    errorMessages = listOf("Root access required to modify system files")
-                ),
+                lastResult = ApplyResult(success = false, errorMessages = listOf("Root access required to modify system files")),
                 showResultDialog = true
             )
             return
@@ -457,109 +406,100 @@ class TunerViewModel : ViewModel() {
             ActivityLogger.log("ConfigApply", "START", "Applying configuration changes...")
 
             try {
-                // Write all configs using ConfigWriter
+                // FLOW-H005: Only write memory config if it was actually loaded from device.
+                // Do NOT fabricate defaults — MemoryManagementConfig() defaults look like
+                // real vendor values (e.g. adjCached=700) but are made-up numbers.
+                val memoryToWrite = _memoryConfig.value
                 val results = ConfigWriter.writeAllConfigs(
                     gameConfigs = _gameConfigs.value,
                     scenarioConfigs = _scenarioConfigs.value,
-                    memoryConfig = _memoryConfig.value
+                    memoryConfig = memoryToWrite
                 )
 
-                // Process results
                 val gameResult = results.find { it.configName == "game_cfg" }
                 val scenarioResult = results.find { it.configName == "scenario_cfg" }
                 val memoryResult = results.find { it.configName == "mem_cfg" }
 
                 val errors = results.filter { !it.success }.mapNotNull { it.errorMessage }
+                val skipped = results.filter { it.skipped }.mapNotNull { it.errorMessage }
                 val success = results.all { it.success }
 
+                // FLOW-H005 / FLOW-L004: Distinguish written vs skipped configs.
+                // "Written" = actually wrote to file; "skipped" = intentionally not written.
                 val applyResult = ApplyResult(
                     success = success,
-                    gameConfigWritten = gameResult?.success ?: false,
-                    scenarioConfigWritten = scenarioResult?.success ?: false,
-                    memoryConfigWritten = memoryResult?.success ?: false,
-                    errorMessages = errors
+                    gameConfigWritten = (gameResult?.success == true && gameResult.skipped == false),
+                    scenarioConfigWritten = (scenarioResult?.success == true && scenarioResult.skipped == false),
+                    memoryConfigWritten = (memoryResult?.success == true && memoryResult.skipped == false),
+                    gameConfigSkipped = gameResult?.skipped == true,
+                    scenarioConfigSkipped = scenarioResult?.skipped == true,
+                    memoryConfigSkipped = memoryResult?.skipped == true,
+                    errorMessages = errors,
+                    skippedMessages = skipped
                 )
 
                 if (success) {
                     ActivityLogger.log("ConfigApply", "SUCCESS", "All configurations applied successfully")
-                    // Update change tracking baseline
                     saveCurrentConfigStatesAsKnown()
-                    // Clear unsaved changes flag
                     _uiState.value = _uiState.value.copy(hasUnsavedChanges = false)
                 } else {
                     ActivityLogger.logError("ConfigApply", "Apply failed: ${errors.joinToString(", ")}")
                 }
 
-                _applyState.value = ApplyState(
-                    isApplying = false,
-                    lastResult = applyResult,
-                    showResultDialog = true
-                )
+                _applyState.value = ApplyState(isApplying = false, lastResult = applyResult, showResultDialog = true)
             } catch (e: Exception) {
                 ActivityLogger.logError("ConfigApply", "Exception during apply: ${e.message}")
                 _applyState.value = ApplyState(
                     isApplying = false,
-                    lastResult = ApplyResult(
-                        success = false,
-                        errorMessages = listOf(e.message ?: "Unknown error")
-                    ),
+                    lastResult = ApplyResult(success = false, errorMessages = listOf(e.message ?: "Unknown error")),
                     showResultDialog = true
                 )
             }
         }
     }
 
-    /**
-     * Dismiss the apply result dialog.
-     */
     fun dismissApplyResult() {
         _applyState.value = _applyState.value.copy(showResultDialog = false)
     }
 
-    /**
-     * Check if there are unsaved configuration changes.
-     */
     fun hasUnsavedChanges(): Boolean = _uiState.value.hasUnsavedChanges
 }
 
 data class TunerUiState(
     val isLoading: Boolean = false,
     val message: String? = null,
-    val hasUnsavedChanges: Boolean = false
+    val hasUnsavedChanges: Boolean = false,
+    val needsConfirmationReset: Boolean = false
 )
 
-/**
- * State for root access management
- */
 data class RootState(
-    val isAvailable: Boolean = false,       // Root is available on device
-    val hasBeenRequested: Boolean = false,  // User has seen the request dialog
-    val isGranted: Boolean = false,         // Root has been granted
-    val isRequesting: Boolean = false       // Currently requesting root
+    val isAvailable: Boolean = false,
+    val hasBeenRequested: Boolean = false,
+    val isGranted: Boolean = false,
+    val isRequesting: Boolean = false
 )
 
-/**
- * State for configuration apply operations
- */
 data class ApplyState(
     val isApplying: Boolean = false,
     val lastResult: ApplyResult? = null,
     val showResultDialog: Boolean = false
 )
 
-/**
- * Result of an apply operation
- */
 data class ApplyResult(
     val success: Boolean,
     val gameConfigWritten: Boolean = false,
     val scenarioConfigWritten: Boolean = false,
     val memoryConfigWritten: Boolean = false,
-    val errorMessages: List<String> = emptyList()
+    val gameConfigSkipped: Boolean = false,
+    val scenarioConfigSkipped: Boolean = false,
+    val memoryConfigSkipped: Boolean = false,
+    val errorMessages: List<String> = emptyList(),
+    val skippedMessages: List<String> = emptyList()
 ) {
     val successCount: Int
         get() = listOf(gameConfigWritten, scenarioConfigWritten, memoryConfigWritten).count { it }
-
+    val skippedCount: Int
+        get() = listOf(gameConfigSkipped, scenarioConfigSkipped, memoryConfigSkipped).count { it }
     val totalConfigs: Int
         get() = 3
 }

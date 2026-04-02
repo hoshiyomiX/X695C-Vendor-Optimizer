@@ -2,29 +2,27 @@ package com.x695c.tuner.data
 
 import java.io.File
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Tracks changes to config files by computing and comparing checksums.
  * Detects if config files were modified outside of the APK.
+ *
+ * Uses SHA-256 for integrity verification (stronger than MD5).
+ * Uses ConcurrentHashMap for thread-safe state management.
  */
 object ConfigChangeTracker {
-    // Only paths verified from the X695C vendor dump are used.
 
-    // Config file paths (private - never exposed in logs)
     private val trackedFiles = mapOf(
-        ConfigFileDetector.ConfigType.GAME_WHITELIST to listOf("/vendor/etc/power_app_cfg.xml"),
-        ConfigFileDetector.ConfigType.PERFORMANCE_SCENARIOS to listOf("/vendor/etc/powerscntbl.xml"),
-        ConfigFileDetector.ConfigType.MEMORY_MANAGEMENT to listOf("/vendor/etc/performance/policy_config_6g_ram.json")
+        ConfigFileDetector.ConfigType.GAME_WHITELIST to VendorPaths.gameConfigPaths,
+        ConfigFileDetector.ConfigType.PERFORMANCE_SCENARIOS to VendorPaths.scenarioConfigPaths,
+        ConfigFileDetector.ConfigType.MEMORY_MANAGEMENT to VendorPaths.memoryConfigPaths
     )
 
-    // Store checksums from APK's last known state
-    private val lastKnownChecksums = mutableMapOf<ConfigFileDetector.ConfigType, String>()
-
-    // Store current checksums from device
-    private val currentChecksums = mutableMapOf<ConfigFileDetector.ConfigType, String>()
-
-    // Track if changes were detected
-    private val changeStatus = mutableMapOf<ConfigFileDetector.ConfigType, ChangeStatus>()
+    // Thread-safe storage
+    private val lastKnownChecksums = ConcurrentHashMap<ConfigFileDetector.ConfigType, String>()
+    private val currentChecksums = ConcurrentHashMap<ConfigFileDetector.ConfigType, String>()
+    private val changeStatus = ConcurrentHashMap<ConfigFileDetector.ConfigType, ChangeStatus>()
 
     data class ChangeStatus(
         val type: ConfigFileDetector.ConfigType,
@@ -33,29 +31,22 @@ object ConfigChangeTracker {
         val fileExists: Boolean
     )
 
-    /**
-     * Result of checking config file changes
-     */
     data class ChangeCheckResult(
         val type: ConfigFileDetector.ConfigType,
         val hasChanged: Boolean,
-        val isExternal: Boolean,  // Changed outside of APK
+        val isExternal: Boolean,
         val obfuscatedPath: String
     )
 
     /**
-     * Compute MD5 checksum of a file's content.
+     * Compute SHA-256 checksum of a file's content.
      */
     private fun computeChecksum(filePath: String): String? {
         return try {
             val file = File(filePath)
-            if (!file.exists() || !file.canRead()) {
-                return null
-            }
-
+            if (!file.exists() || !file.canRead()) return null
             val content = file.readBytes()
-            val md = MessageDigest.getInstance("MD5")
-            val digest = md.digest(content)
+            val digest = MessageDigest.getInstance("SHA-256").digest(content)
             digest.joinToString("") { "%02x".format(it) }
         } catch (e: Exception) {
             ActivityLogger.logError("ConfigChangeTracker", "Failed to compute checksum: ${e.message}")
@@ -63,24 +54,14 @@ object ConfigChangeTracker {
         }
     }
 
-    /**
-     * Get obfuscated path name for logging
-     */
-    private fun getObfuscatedPath(type: ConfigFileDetector.ConfigType): String {
-        return when (type) {
-            ConfigFileDetector.ConfigType.GAME_WHITELIST -> "[GAME_CONFIG]"
-            ConfigFileDetector.ConfigType.PERFORMANCE_SCENARIOS -> "[SCENARIO_TABLE]"
-            ConfigFileDetector.ConfigType.MEMORY_MANAGEMENT -> "[MEMORY_CONFIG]"
-        }
+    private fun getObfuscatedPath(type: ConfigFileDetector.ConfigType): String = when (type) {
+        ConfigFileDetector.ConfigType.GAME_WHITELIST -> "[GAME_CONFIG]"
+        ConfigFileDetector.ConfigType.PERFORMANCE_SCENARIOS -> "[SCENARIO_TABLE]"
+        ConfigFileDetector.ConfigType.MEMORY_MANAGEMENT -> "[MEMORY_CONFIG]"
     }
 
-    /**
-     * Save the current checksum as the "last known state" from APK.
-     * Call this when the APK modifies a config file.
-     */
     fun saveCurrentStateAsKnown(type: ConfigFileDetector.ConfigType) {
         val paths = trackedFiles[type] ?: return
-
         for (path in paths) {
             val checksum = computeChecksum(path)
             if (checksum != null) {
@@ -91,18 +72,10 @@ object ConfigChangeTracker {
         }
     }
 
-    /**
-     * Save all current config states as known.
-     */
     fun saveAllCurrentStatesAsKnown() {
-        trackedFiles.keys.forEach { type ->
-            saveCurrentStateAsKnown(type)
-        }
+        trackedFiles.keys.forEach { saveCurrentStateAsKnown(it) }
     }
 
-    /**
-     * Check if a specific config type has been modified externally.
-     */
     fun checkForChanges(type: ConfigFileDetector.ConfigType): ChangeCheckResult {
         val paths = trackedFiles[type] ?: return ChangeCheckResult(type, false, false, getObfuscatedPath(type))
 
@@ -123,69 +96,29 @@ object ConfigChangeTracker {
         val hasChanged = if (lastKnown != null && currentChecksum != null) {
             lastKnown != currentChecksum
         } else {
-            false  // No baseline to compare
+            false
         }
 
         val isExternal = hasChanged && lastKnown != null
-
-        // Update status
-        changeStatus[type] = ChangeStatus(
-            type = type,
-            hasChanged = hasChanged,
-            lastChecked = System.currentTimeMillis(),
-            fileExists = fileExists
-        )
+        changeStatus[type] = ChangeStatus(type, hasChanged, System.currentTimeMillis(), fileExists)
 
         if (isExternal) {
             ActivityLogger.log("ConfigChangeTracker", "EXTERNAL_CHANGE_DETECTED", "${getObfuscatedPath(type)} was modified externally")
         }
 
-        return ChangeCheckResult(
-            type = type,
-            hasChanged = hasChanged,
-            isExternal = isExternal,
-            obfuscatedPath = getObfuscatedPath(type)
-        )
+        return ChangeCheckResult(type, hasChanged, isExternal, getObfuscatedPath(type))
     }
 
-    /**
-     * Check all config files for changes.
-     * Returns a map of config types to their change status.
-     */
     fun checkAllForChanges(): Map<ConfigFileDetector.ConfigType, ChangeCheckResult> {
-        val results = mutableMapOf<ConfigFileDetector.ConfigType, ChangeCheckResult>()
-
-        trackedFiles.keys.forEach { type ->
-            results[type] = checkForChanges(type)
-        }
-
-        return results
+        return trackedFiles.keys.associateWith { checkForChanges(it) }
     }
 
-    /**
-     * Get the current change status for a config type.
-     */
-    fun getChangeStatus(type: ConfigFileDetector.ConfigType): ChangeStatus? {
-        return changeStatus[type]
-    }
+    fun getChangeStatus(type: ConfigFileDetector.ConfigType): ChangeStatus? = changeStatus[type]
 
-    /**
-     * Get all change statuses.
-     */
-    fun getAllChangeStatuses(): Map<ConfigFileDetector.ConfigType, ChangeStatus> {
-        return changeStatus.toMap()
-    }
+    fun getAllChangeStatuses(): Map<ConfigFileDetector.ConfigType, ChangeStatus> = changeStatus.toMap()
 
-    /**
-     * Check if any config file has been modified externally.
-     */
-    fun hasAnyExternalChanges(): Boolean {
-        return changeStatus.values.any { it.hasChanged }
-    }
+    fun hasAnyExternalChanges(): Boolean = changeStatus.values.any { it.hasChanged }
 
-    /**
-     * Clear all stored checksums (for reset).
-     */
     fun clearAllChecksums() {
         lastKnownChecksums.clear()
         currentChecksums.clear()
@@ -193,14 +126,9 @@ object ConfigChangeTracker {
         ActivityLogger.log("ConfigChangeTracker", "RESET", "All checksums cleared")
     }
 
-    /**
-     * Initialize baseline checksums from current device state.
-     * Call this on first run or after a fresh config load.
-     */
     fun initializeBaseline() {
         trackedFiles.keys.forEach { type ->
             val paths = trackedFiles[type] ?: return@forEach
-
             for (path in paths) {
                 val checksum = computeChecksum(path)
                 if (checksum != null) {
@@ -210,17 +138,12 @@ object ConfigChangeTracker {
                 }
             }
         }
-
         ActivityLogger.log("ConfigChangeTracker", "BASELINE_INIT", "Baseline checksums initialized for ${lastKnownChecksums.size} config types")
     }
 
-    /**
-     * Get a summary of all change statuses.
-     */
     fun getChangeSummary(): String {
         val sb = StringBuilder()
         sb.appendLine("=== Config File Change Status ===")
-
         changeStatus.forEach { (type, status) ->
             val changeText = when {
                 !status.fileExists -> "NOT FOUND"
@@ -229,7 +152,6 @@ object ConfigChangeTracker {
             }
             sb.appendLine("${type.name}: $changeText")
         }
-
         return sb.toString()
     }
 }

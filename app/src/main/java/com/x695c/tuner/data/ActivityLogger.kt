@@ -6,12 +6,15 @@ import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * Activity Logger for recording all user actions for debugging and development.
- * Thread-safe singleton implementation.
- * All file paths are obfuscated for security.
+ * Thread-safe: uses CopyOnWriteArrayList.
+ * Implements a maximum log size to prevent unbounded memory growth.
  */
 object ActivityLogger {
     private val logs = CopyOnWriteArrayList<LogEntry>()
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
+
+    /** Maximum number of log entries to retain. Oldest entries are evicted. */
+    private const val MAX_LOG_ENTRIES = 500
 
     data class LogEntry(
         val timestamp: Long,
@@ -20,35 +23,30 @@ object ActivityLogger {
         val screen: String
     )
 
-    /**
-     * Obfuscate file path for security - never expose real paths in logs
-     */
-    private fun obfuscatePath(path: String): String {
-        // Return only the config type, not the actual path
-        return when {
-            path.contains("power_app_cfg") -> "[GAME_CONFIG]"
-            path.contains("powerhint") -> "[POWER_HINT]"
-            path.contains("powerscntbl") -> "[SCENARIO_TABLE]"
-            path.contains("policy_config") -> "[MEMORY_CONFIG]"
-            path.contains("gpu_dvfs") -> "[GPU_CONFIG]"
-            path.contains("hwservicectrl") -> "[HW_SERVICE]"
-            path.contains("lmkd") -> "[LMKD]"
-            path.contains("mali") -> "[GPU_DRIVER]"
-            path.contains("/vendor/") -> "[VENDOR_FILE]"
-            path.contains("/data/vendor/") -> "[DATA_VENDOR]"
-            path.contains("/sys/") -> "[SYSFS]"
-            else -> "[CONFIG_FILE]"
+    private fun obfuscatePath(path: String): String = when {
+        path.contains("power_app_cfg") -> "[GAME_CONFIG]"
+        path.contains("powerhint") -> "[POWER_HINT]"
+        path.contains("powerscntbl") -> "[SCENARIO_TABLE]"
+        path.contains("policy_config") -> "[MEMORY_CONFIG]"
+        path.contains("gpu_dvfs") -> "[GPU_CONFIG]"
+        path.contains("hwservicectrl") -> "[HW_SERVICE]"
+        path.contains("lmkd") -> "[LMKD]"
+        path.contains("mali") -> "[GPU_DRIVER]"
+        path.contains("/vendor/") -> "[VENDOR_FILE]"
+        path.contains("/data/vendor/") -> "[DATA_VENDOR]"
+        path.contains("/sys/") -> "[SYSFS]"
+        else -> "[CONFIG_FILE]"
+    }
+
+    private fun trimToMaxSize() {
+        while (logs.size > MAX_LOG_ENTRIES) {
+            logs.removeAt(0)
         }
     }
 
     fun log(screen: String, action: String, details: String = "") {
-        val entry = LogEntry(
-            timestamp = System.currentTimeMillis(),
-            action = action,
-            details = details,
-            screen = screen
-        )
-        logs.add(entry)
+        logs.add(LogEntry(timestamp = System.currentTimeMillis(), action = action, details = details, screen = screen))
+        trimToMaxSize()
     }
 
     fun logNavigation(from: String, to: String) {
@@ -64,13 +62,11 @@ object ActivityLogger {
     }
 
     fun logFileDetection(filePath: String, exists: Boolean) {
-        // Obfuscate the file path before logging
         val obfuscatedPath = obfuscatePath(filePath)
         log("FileDetection", "FILE_CHECK", "$obfuscatedPath: ${if (exists) "FOUND" else "NOT FOUND"}")
     }
 
     fun logError(screen: String, error: String) {
-        // Remove any potential file paths from error messages
         val sanitizedError = error
             .replace(Regex("/vendor/\\S+"), "[VENDOR_FILE]")
             .replace(Regex("/data/\\S+"), "[DATA_FILE]")
@@ -87,14 +83,12 @@ object ActivityLogger {
         sb.appendLine("Total entries: ${logs.size}")
         sb.appendLine("==========================================")
         sb.appendLine()
-
         logs.forEach { entry ->
             sb.appendLine("[${dateFormat.format(Date(entry.timestamp))}] [${entry.screen}] ${entry.action}")
             if (entry.details.isNotEmpty()) {
                 sb.appendLine("    ${entry.details}")
             }
         }
-
         return sb.toString()
     }
 

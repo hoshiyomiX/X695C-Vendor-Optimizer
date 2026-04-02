@@ -11,72 +11,52 @@ Android application with Jetpack Compose for configuring INFINIX X695C vendor op
 
 ## Features
 
-### 🎮 Game Optimization
-- Per-game performance profiles
+### Game Optimization
+- Per-game performance profiles loaded from device vendor files
 - Thermal policy configuration
 - GPU DVFS margin settings
 - Network optimization for gaming
 - FPS and frame control settings
+- Custom game addition via package name
 
-### ⚡ Performance Scenarios
+### Performance Scenarios
 - App launch boost
 - Touch response optimization
 - Screen rotation boost
 - Fingerprint scanner optimization
 - Process creation boost
+- All scenarios loaded from device configuration
 
-### 💾 Memory Management
+### Memory Management
 - Memory threshold configuration
 - Process memory limits
 - Feature flags for memory behavior
 - Swap settings
 
-### 🎨 GPU Settings
+### GPU Settings
 - DVFS margin configuration
 - Timer-based DVFS control
 - Loading-based DVFS step
 - Quick presets
 
+## Architecture Notes
+
+All configuration data is loaded **directly from the device vendor partition** at runtime. No game package names or tuning values are hardcoded in the application. The config files are:
+
+- `/vendor/etc/power_app_cfg.xml` — Game optimization whitelist
+- `/vendor/etc/powerscntbl.xml` — Performance scenario profiles
+- `/vendor/etc/performance/policy_config_6g_ram.json` — Memory management
+
 ## Optimization Profiles
 
 | Profile | Description |
 |---------|-------------|
-| Default | Stock device configuration |
+| Default | Reload configs from device |
 | Power Saving | Optimized for battery life |
 | Balanced | Balance between performance and battery |
 | Performance | Optimized for smooth operation |
 | Gaming | Maximum performance for gaming |
 | Custom | User-defined configuration |
-
-## Parameters
-
-### Thermal Policy
-| Value | Description |
-|-------|-------------|
-| 0 | Default (No Override) |
-| 1 | Conservative (Cool) |
-| 4 | Balanced |
-| 8 | Performance (Gaming) |
-| 12 | Aggressive (Max Performance) |
-
-### GPU Margin Mode
-| Value | Description |
-|-------|-------------|
-| 10 | Minimum (Power Saving) |
-| 30 | Low |
-| 50 | Balanced |
-| 80 | High |
-| 110 | Maximum (Performance) |
-
-### UCLAMP Min (CPU Capacity)
-| Value | Description |
-|-------|-------------|
-| 0 | None (0%) |
-| 20 | Low (20%) |
-| 40 | Medium (40%) |
-| 60 | High (60%) |
-| 80 | Very High (80%) |
-| 100 | Maximum (100%) |
 
 ## Building
 
@@ -95,35 +75,40 @@ The APK will be generated at `app/build/outputs/apk/release/app-release.apk`
 ## Project Structure
 
 ```
-app/src/main/java/com/x695c/optimizer/
-├── MainActivity.kt          # Main activity and theme
+app/src/main/java/com/x695c/tuner/
+├── MainActivity.kt              # Main activity, theme, navigation
 ├── data/
-│   ├── OptimizationConfig.kt # Data models and enums
-│   └── OptimizerViewModel.kt # ViewModel for state management
+│   ├── TuningConfig.kt           # Data models, enums, validation helpers
+│   ├── TunerViewModel.kt         # ViewModel, state management
+│   ├── ConfigWriter.kt           # Root-based file writing (XML/JSON)
+│   ├── ConfigFileParser.kt       # XML/JSON parsing from vendor files
+│   ├── ConfigFileDetector.kt     # Config file existence/readability check
+│   ├── ConfigChangeTracker.kt    # External modification detection (SHA-256)
+│   ├── RootChecker.kt            # Root access detection and execution
+│   └── ActivityLogger.kt         # Audit logging with path obfuscation
 └── ui/
     ├── components/
-    │   └── DropdownComponents.kt # Reusable dropdown components
+    │   └── DropdownComponents.kt  # Reusable dropdown components
     └── screens/
         ├── MainDashboardScreen.kt
         ├── GameListScreen.kt
-        ├── GameOptimizationScreen.kt
+        ├── GameTuningScreen.kt
         ├── ScenarioListScreen.kt
         ├── PerformanceScenarioScreen.kt
-        ├── MemoryManagementScreen.kt
-        └── GpuSettingsScreen.kt
+        └── MemoryManagementScreen.kt
 ```
 
 ## Technology Stack
 
 - **UI**: Jetpack Compose with Material 3
-- **Architecture**: MVVM with ViewModel
-- **Kotlin**: 1.9.20
+- **Architecture**: MVVM with ViewModel + StateFlow
+- **Kotlin**: 1.9.22
 - **Min SDK**: 26 (Android 8.0)
 - **Target SDK**: 34 (Android 14)
 
 ## ⚠️ Disclaimer
 
-This application generates configuration files that need to be applied to the vendor partition of a rooted device. Modifying vendor files can:
+This application modifies configuration files on the vendor partition of a rooted device. Modifying vendor files can:
 
 - Void your warranty
 - Cause system instability
@@ -131,13 +116,6 @@ This application generates configuration files that need to be applied to the ve
 - Increase device temperature and power consumption
 
 **Use at your own risk. Always backup your original configuration files before making changes.**
-
-## Configuration Files
-
-The generated configurations can be applied to:
-- `/vendor/etc/power_app_cfg.xml` - Game optimization whitelist
-- `/vendor/etc/powerscntbl.xml` - Performance scenario profiles
-- `/vendor/etc/performance/policy_config_6g_ram.json` - Memory management
 
 ## License
 

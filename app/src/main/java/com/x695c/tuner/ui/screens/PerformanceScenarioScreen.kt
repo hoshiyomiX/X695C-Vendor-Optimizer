@@ -153,7 +153,7 @@ fun PerformanceScenarioScreen(
                     10000000L to "10 ms (Short)",
                     50000000L to "50 ms (Default)",
                     100000000L to "100 ms",
-                    200999999L to "200 ms (Long)",
+                    200000000L to "200 ms (Long)",
                     500000000L to "500 ms (Long)"
                 ),
                 onValueChange = { onConfigChange(config.copy(touchBoostDuration = it)) }

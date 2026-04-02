@@ -10,14 +10,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.x695c.tuner.data.*
 import com.x695c.tuner.ui.screens.*
@@ -121,16 +118,6 @@ fun TunerApp(
     // Navigation stack
     var screenStack by remember { mutableStateOf<List<Screen>>(listOf(Screen.Main)) }
 
-    // Root request dialog state
-    var showRootDialog by remember { mutableStateOf(false) }
-
-    // Check if we should show root request dialog
-    LaunchedEffect(rootState.isAvailable, rootState.hasBeenRequested) {
-        if (rootState.isAvailable && !rootState.hasBeenRequested) {
-            showRootDialog = true
-        }
-    }
-
     // Helper functions
     fun navigateTo(screen: Screen) {
         screenStack = screenStack + screen
@@ -167,21 +154,6 @@ fun TunerApp(
     val gameConfigChanged = configChangeStatus[ConfigFileDetector.ConfigType.GAME_WHITELIST]?.hasChanged ?: false
     val scenarioConfigChanged = configChangeStatus[ConfigFileDetector.ConfigType.PERFORMANCE_SCENARIOS]?.hasChanged ?: false
     val memoryConfigChanged = configChangeStatus[ConfigFileDetector.ConfigType.MEMORY_MANAGEMENT]?.hasChanged ?: false
-    // Root Request Dialog
-    if (showRootDialog) {
-        RootRequestDialog(
-            onGrant = {
-                showRootDialog = false
-                viewModel.requestRootAccess()
-            },
-            onDismiss = {
-                showRootDialog = false
-                viewModel.dismissRootRequest()
-            },
-            isRequesting = rootState.isRequesting
-        )
-    }
-
     // Scaffold with proper window insets handling for status bar
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -215,9 +187,10 @@ fun TunerApp(
                     onNavigateToScenarios = { navigateTo(Screen.Scenarios) },
                     onNavigateToMemory = { navigateTo(Screen.Memory) },
                     onCopyLogs = { copyLogsToClipboard() },
-                    onRequestRoot = { showRootDialog = true },
                     onApplyConfiguration = { viewModel.applyConfiguration() },
-                    onDismissApplyResult = { viewModel.dismissApplyResult() }
+                    onDismissApplyResult = { viewModel.dismissApplyResult() },
+                    // FLOW-H006: Wire up root request flow (was dead code — onRequestRoot defaulted to {})
+                    onRequestRoot = { viewModel.requestRootAccess() }
                 )
 
                 is Screen.Games -> GameListScreen(
@@ -269,78 +242,7 @@ fun TunerApp(
                     onConfigChange = { viewModel.updateMemoryConfig(it) },
                     onBack = { navigateBack() }
                 )
-
-
             }
         }
     }
-}
-
-/**
- * Root Request Dialog - Prompts user to grant root access
- */
-@Composable
-fun RootRequestDialog(
-    onGrant: () -> Unit,
-    onDismiss: () -> Unit,
-    isRequesting: Boolean
-) {
-    AlertDialog(
-        onDismissRequest = { if (!isRequesting) onDismiss() },
-        icon = {
-            Icon(
-                imageVector = Icons.Default.Lock,
-                contentDescription = null,
-                modifier = Modifier.size(48.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
-        },
-        title = {
-            Text(text = "Root Access Required")
-        },
-        text = {
-            Column {
-                Text(
-                    text = "X695C Vendor Tuner requires root access to modify vendor configuration files.",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = "Without root access, the app can only read configuration files but cannot apply changes.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (isRequesting) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Requesting root access...")
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = onGrant,
-                enabled = !isRequesting
-            ) {
-                Text("Grant Root Access")
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = onDismiss,
-                enabled = !isRequesting
-            ) {
-                Text("Continue Without Root")
-            }
-        }
-    )
 }

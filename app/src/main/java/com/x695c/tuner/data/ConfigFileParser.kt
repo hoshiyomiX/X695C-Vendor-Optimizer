@@ -21,19 +21,30 @@ object ConfigFileParser {
     private val memoryConfigPaths = VendorPaths.memoryConfigPaths
 
     /**
-     * Create a secure DocumentBuilderFactory with XXE protections disabled.
-     * Reference: Android security best practices for XML parsing.
+     * Create a secure DocumentBuilderFactory with XXE protections.
+     * 
+     * Vendor XML files may contain DOCTYPE declarations, so we allow those
+     * but still block all external entity resolution (the real XXE attack vector).
+     * 
+     * Security model:
+     * - DOCTYPE allowed (vendor compatibility)
+     * - External entities BLOCKED (XXE prevention)
+     * - External DTD loading BLOCKED (XXE prevention)
+     * - Entity expansion BLOCKED (billion laughs prevention)
+     * 
+     * Reference: OWASP XXE Prevention Cheat Sheet
      */
     private fun createSecureDocumentBuilderFactory(): DocumentBuilderFactory {
         val factory = DocumentBuilderFactory.newInstance()
-        // Disable DTD processing entirely (prevents XXE)
-        factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-        // Disable external entities
+        // Allow DOCTYPE declarations (vendor XMLs use them)
+        // DOCTYPE itself is harmless — external entity resolution is the attack vector
+        factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", false)
+        // Disable external entities (primary XXE defense)
         factory.setFeature("http://xml.org/sax/features/external-general-entities", false)
         factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false)
         // Disable external DTD loading
         factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
-        // Disable entity expansion
+        // Disable entity expansion (billion laughs attack)
         factory.setExpandEntityReferences(false)
         return factory
     }

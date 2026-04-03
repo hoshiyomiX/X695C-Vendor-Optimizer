@@ -1,6 +1,5 @@
 package com.x695c.tuner.data
 
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.DataOutputStream
@@ -11,6 +10,13 @@ import java.io.InputStreamReader
  * All write operations require root privileges to modify /vendor/etc/ files.
  *
  * IMPORTANT: Without root access, NO configuration changes can be applied!
+ *
+ * Backup/Restore strategy:
+ * - NO .bak files are created. All restore operations use hardcoded factory
+ *   defaults from [HardcodedDefaults] (baked into APK assets from vendor dump).
+ * - On partial write failure in [writeAllConfigs], successfully-written configs
+ *   are rolled back to factory defaults (not to previous user-modified state).
+ * - This eliminates all external file reliance — zero files created outside /vendor.
  */
 object ConfigWriter {
     private val GAME_CONFIG_PATH = VendorPaths.GAME_CONFIG_PATH
@@ -19,9 +25,6 @@ object ConfigWriter {
     private const val GAME_CONFIG_NAME = "game_cfg"
     private const val SCENARIO_CONFIG_NAME = "scenario_cfg"
     private const val MEMORY_CONFIG_NAME = "mem_cfg"
-
-    /** Backup directory on writable partition. /vendor is read-only so .bak files must go elsewhere. */
-    private const val BACKUP_DIR = "/data/local/tmp/x695c_tuner_backups"
 
     data class WriteResult(
         val success: Boolean,
@@ -99,20 +102,12 @@ object ConfigWriter {
     /**
      * Write content to a file using root via ProcessBuilder pipe.
      * Pipes content directly through stdin to avoid shell escaping issues.
+     *
+     * No backup is created — restore uses hardcoded factory defaults from APK assets.
      */
     private fun writeToFileWithRoot(filePath: String, content: String, configName: String): WriteResult {
         if (!checkRootOrLog()) {
             return WriteResult(success = false, configName = configName, errorMessage = "Root access not available")
-        }
-
-        // FLOW-W004: Actually check backup exit code instead of silently ignoring failure
-        // Backup to writable location — /vendor is read-only so "$filePath.bak" would fail
-        val (mkdirExit, _) = executeRootCommand("mkdir -p $BACKUP_DIR")
-        val backupPath = "$BACKUP_DIR/${configName}.bak"
-        val (backupExit, backupOutput) = executeRootCommand("cp \"$filePath\" \"$backupPath\"")
-        if (backupExit != 0) {
-            ActivityLogger.logError("ConfigWriter", "Backup failed for $configName (exit $backupExit): $backupOutput")
-            return WriteResult(success = false, configName = configName, errorMessage = "Backup creation failed — write aborted to prevent data loss")
         }
 
         return try {
@@ -143,7 +138,7 @@ object ConfigWriter {
             val exitCode = process.waitFor()
 
             if (exitCode == 0) {
-                // FLOW-W002: Verify written file is not empty
+                // Verify written file is not empty
                 val (_, verifyOutput) = executeRootCommand("wc -c \"$filePath\" 2>/dev/null")
                 val fileSize = verifyOutput.trim().filter { it.isDigit() }.toIntOrNull() ?: 0
                 if (fileSize == 0) {
@@ -160,6 +155,8 @@ object ConfigWriter {
             WriteResult(success = false, configName = configName, errorMessage = e.message)
         }
     }
+
+    // ==================== USER WRITE OPERATIONS ====================
 
     fun writeGameConfigs(configs: Map<String, GameTuningConfig>): WriteResult {
         if (!checkRootOrLog()) {
@@ -269,13 +266,14 @@ object ConfigWriter {
         results.add(memoryResult)
         if (memoryResult.success && !memoryResult.skipped) writtenConfigs.add(MEMORY_CONFIG_NAME)
 
-        // FLOW-W003: Rollback on partial failure
+        // FLOW-W003: Rollback on partial failure — restore from hardcoded factory defaults
+        // (no .bak files; factory defaults are baked into APK assets)
         val failedConfigs = results.filter { !it.success }
         if (failedConfigs.isNotEmpty() && writtenConfigs.isNotEmpty()) {
-            ActivityLogger.logError("ConfigWriter", "PARTIAL FAILURE: ${failedConfigs.size} configs failed, rolling back ${writtenConfigs.size} successful writes")
+            ActivityLogger.logError("ConfigWriter", "PARTIAL FAILURE: ${failedConfigs.size} configs failed, rolling back ${writtenConfigs.size} successful writes to factory defaults")
             writtenConfigs.forEach { cfgName ->
-                val restoreResult = restoreFromBackup(cfgName)
-                ActivityLogger.log("ConfigWriter", "ROLLBACK", "$cfgName restore: ${if (restoreResult.success) "SUCCESS" else "FAILED"}")
+                val restoreResult = restoreFromDefaults(cfgName)
+                ActivityLogger.log("ConfigWriter", "ROLLBACK", "$cfgName factory restore: ${if (restoreResult.success) "SUCCESS" else "FAILED"}")
             }
         }
 
@@ -284,25 +282,87 @@ object ConfigWriter {
         return results
     }
 
-    fun restoreFromBackup(configName: String): WriteResult {
+    // ==================== RESTORE FROM HARDCODED FACTORY DEFAULTS ====================
+
+    /**
+     * Restore a config to its factory default by writing hardcoded vendor dump values
+     * from [HardcodedDefaults] (APK assets) to the vendor partition.
+     *
+     * This replaces the old .bak-based [restoreFromBackup] approach, eliminating
+     * all external file reliance. The factory defaults are baked into the APK
+     * binary and cannot be lost or corrupted on the device.
+     *
+     * @param configName One of GAME_CONFIG_NAME, SCENARIO_CONFIG_NAME, MEMORY_CONFIG_NAME
+     * @return WriteResult indicating success or failure of the restore
+     */
+    fun restoreFromDefaults(configName: String): WriteResult {
         if (!checkRootOrLog()) {
             return WriteResult(success = false, configName = configName, errorMessage = "Root access required")
         }
-        val (path, name) = when (configName) {
-            GAME_CONFIG_NAME -> GAME_CONFIG_PATH to GAME_CONFIG_NAME
-            SCENARIO_CONFIG_NAME -> SCENARIO_CONFIG_PATH to SCENARIO_CONFIG_NAME
-            MEMORY_CONFIG_NAME -> MEMORY_CONFIG_PATH to MEMORY_CONFIG_NAME
-            else -> return WriteResult(success = false, configName = configName, errorMessage = "Unknown config")
+
+        return when (configName) {
+            GAME_CONFIG_NAME -> {
+                val defaults = HardcodedDefaults.getGameDefaults()
+                if (defaults.isEmpty()) {
+                    ActivityLogger.logError("ConfigWriter", "No factory defaults available for game configs")
+                    return WriteResult(success = false, configName = configName, errorMessage = "No factory defaults available (HardcodedDefaults not initialized)")
+                }
+                val xmlContent = buildGameConfigXml(defaults)
+                ActivityLogger.log("ConfigWriter", "RESTORE_DEFAULTS", "Restoring $GAME_CONFIG_NAME from hardcoded factory defaults (${defaults.size} entries)")
+                val result = writeToFileWithRoot(GAME_CONFIG_PATH, xmlContent, GAME_CONFIG_NAME)
+                if (result.success) {
+                    ActivityLogger.log("ConfigWriter", "RESTORE_SUCCESS", "$GAME_CONFIG_NAME restored to factory defaults")
+                } else {
+                    ActivityLogger.logError("ConfigWriter", "Failed to restore $GAME_CONFIG_NAME: ${result.errorMessage}")
+                }
+                result
+            }
+            SCENARIO_CONFIG_NAME -> {
+                val defaults = HardcodedDefaults.getScenarioDefaults()
+                if (defaults.isEmpty()) {
+                    ActivityLogger.logError("ConfigWriter", "No factory defaults available for scenario configs")
+                    return WriteResult(success = false, configName = configName, errorMessage = "No factory defaults available (HardcodedDefaults not initialized)")
+                }
+                val xmlContent = buildScenarioConfigXml(defaults)
+                ActivityLogger.log("ConfigWriter", "RESTORE_DEFAULTS", "Restoring $SCENARIO_CONFIG_NAME from hardcoded factory defaults (${defaults.size} entries)")
+                val result = writeToFileWithRoot(SCENARIO_CONFIG_PATH, xmlContent, SCENARIO_CONFIG_NAME)
+                if (result.success) {
+                    ActivityLogger.log("ConfigWriter", "RESTORE_SUCCESS", "$SCENARIO_CONFIG_NAME restored to factory defaults")
+                } else {
+                    ActivityLogger.logError("ConfigWriter", "Failed to restore $SCENARIO_CONFIG_NAME: ${result.errorMessage}")
+                }
+                result
+            }
+            MEMORY_CONFIG_NAME -> {
+                val defaults = HardcodedDefaults.getMemoryDefaults()
+                if (defaults == null) {
+                    ActivityLogger.logError("ConfigWriter", "No factory defaults available for memory config")
+                    return WriteResult(success = false, configName = configName, errorMessage = "No factory defaults available (HardcodedDefaults not initialized)")
+                }
+                val jsonContent = buildMemoryConfigJson(defaults)
+                ActivityLogger.log("ConfigWriter", "RESTORE_DEFAULTS", "Restoring $MEMORY_CONFIG_NAME from hardcoded factory defaults")
+                val result = writeToFileWithRoot(MEMORY_CONFIG_PATH, jsonContent, MEMORY_CONFIG_NAME)
+                if (result.success) {
+                    ActivityLogger.log("ConfigWriter", "RESTORE_SUCCESS", "$MEMORY_CONFIG_NAME restored to factory defaults")
+                } else {
+                    ActivityLogger.logError("ConfigWriter", "Failed to restore $MEMORY_CONFIG_NAME: ${result.errorMessage}")
+                }
+                result
+            }
+            else -> WriteResult(success = false, configName = configName, errorMessage = "Unknown config: $configName")
         }
-        val backupPath = "$BACKUP_DIR/${configName}.bak"
-        val (exitCode, output) = executeRootCommand("cp \"$backupPath\" \"$path\"")
-        return if (exitCode == 0) {
-            ActivityLogger.log("ConfigWriter", "RESTORE_SUCCESS", "$name restored from backup")
-            WriteResult(success = true, configName = name)
-        } else {
-            ActivityLogger.logError("ConfigWriter", "Failed to restore $name: $output")
-            WriteResult(success = false, configName = name, errorMessage = output)
-        }
+    }
+
+    /**
+     * Restore ALL configs (games, scenarios, memory) to hardcoded factory defaults.
+     * Writes vendor dump values directly to the vendor partition.
+     */
+    fun restoreAllDefaults(): List<WriteResult> {
+        return listOf(
+            restoreFromDefaults(GAME_CONFIG_NAME),
+            restoreFromDefaults(SCENARIO_CONFIG_NAME),
+            restoreFromDefaults(MEMORY_CONFIG_NAME)
+        )
     }
 
     // ==================== XML/JSON BUILDERS ====================

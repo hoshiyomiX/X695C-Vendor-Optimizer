@@ -20,6 +20,9 @@ object ConfigWriter {
     private const val SCENARIO_CONFIG_NAME = "scenario_cfg"
     private const val MEMORY_CONFIG_NAME = "mem_cfg"
 
+    /** Backup directory on writable partition. /vendor is read-only so .bak files must go elsewhere. */
+    private const val BACKUP_DIR = "/data/local/tmp/x695c_tuner_backups"
+
     data class WriteResult(
         val success: Boolean,
         val configName: String,
@@ -103,7 +106,10 @@ object ConfigWriter {
         }
 
         // FLOW-W004: Actually check backup exit code instead of silently ignoring failure
-        val (backupExit, backupOutput) = executeRootCommand("cp \"$filePath\" \"$filePath.bak\" 2>/dev/null")
+        // Backup to writable location — /vendor is read-only so "$filePath.bak" would fail
+        val (mkdirExit, _) = executeRootCommand("mkdir -p $BACKUP_DIR")
+        val backupPath = "$BACKUP_DIR/${configName}.bak"
+        val (backupExit, backupOutput) = executeRootCommand("cp \"$filePath\" \"$backupPath\"")
         if (backupExit != 0) {
             ActivityLogger.logError("ConfigWriter", "Backup failed for $configName (exit $backupExit): $backupOutput")
             return WriteResult(success = false, configName = configName, errorMessage = "Backup creation failed — write aborted to prevent data loss")
@@ -288,7 +294,8 @@ object ConfigWriter {
             MEMORY_CONFIG_NAME -> MEMORY_CONFIG_PATH to MEMORY_CONFIG_NAME
             else -> return WriteResult(success = false, configName = configName, errorMessage = "Unknown config")
         }
-        val (exitCode, output) = executeRootCommand("cp \"$path.bak\" \"$path\"")
+        val backupPath = "$BACKUP_DIR/${configName}.bak"
+        val (exitCode, output) = executeRootCommand("cp \"$backupPath\" \"$path\"")
         return if (exitCode == 0) {
             ActivityLogger.log("ConfigWriter", "RESTORE_SUCCESS", "$name restored from backup")
             WriteResult(success = true, configName = name)
